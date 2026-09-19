@@ -130,17 +130,6 @@ For the all-judgments/single-date change, typecheck/build, all seven real API te
 
 ## Architecture
 
-### Experimental ownership evaluation
-
-The isolated [ownership suite](tests/ownership/README.md) contains 72 authored
-scenarios, 216 rendered variants, and guarded-deletion checks. It evaluates real
-Jev ownership decisions separately from extraction and removal correctness. The
-first real run exposed substantial incomplete parent removals, so the prototype
-has **not** replaced production discovery or filtering. See the suite README for
-reproducible commands, measured results, and limitations.
-
-### Shipping modules
-
 - `extension/src/scan.ts`: candidate boundaries and evidence extraction.
 - `extension/src/content.ts`: bounded queue, revisions, retries, and stale-result rejection.
 - `extension/src/effects.ts`: notices, diagnostic labels, and the removal entry point.
