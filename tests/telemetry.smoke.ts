@@ -33,7 +33,7 @@ function singleDate(row: any) {
   assert(!/"(?:detected_at|judged_at|removed_at|recorded_at)"/.test(JSON.stringify(row)), "Legacy timestamp field remained");
 }
 
-async function database(action: "legacy" | "cleanup") {
+async function database(action: "legacy" | "metadata" | "cleanup") {
   // All schema-changing checks are confined to this run's disposable namespace.
   const process = Bun.spawn(["uv", "run", "--env-file", ".env", "python", "-c", `
 import os, re, sys
@@ -42,16 +42,21 @@ from denied.telemetry import connect, table
 name = os.environ['DENIED_DB_SCHEMA']
 assert re.fullmatch(r'denied_test_[a-f0-9]{32}', name)
 with connect() as connection:
-    if sys.argv[1] == 'legacy':
-        # Exercise migration using real removal rows, not substituted judgments.
+    if sys.argv[1] in ('legacy', 'metadata'):
+        # Exercise both historical schemas using real removal rows, not substituted judgments.
+        if sys.argv[1] == 'legacy':
+            connection.execute(sql.SQL('''
+                ALTER TABLE {table} RENAME COLUMN date TO removed_at;
+                ALTER TABLE {table} ADD COLUMN detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                                   ADD COLUMN judged_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                                   ADD COLUMN recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+            ''').format(table=table()))
         connection.execute(sql.SQL('''
-            ALTER TABLE {table} RENAME COLUMN date TO removed_at;
-            ALTER TABLE {table} ADD COLUMN detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                               ADD COLUMN judged_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                               ADD COLUMN recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
             UPDATE {table} SET classifications = (
-                SELECT jsonb_agg(item || jsonb_build_object('judged_at', judged_at))
-                FROM jsonb_array_elements(classifications) AS item
+                SELECT jsonb_agg(item || jsonb_build_object(
+                    'judged_at', NOW(), 'remove', true, 'policy_version', '5',
+                    'model_version', 'jev-latest', 'judge_ms', judge_ms
+                )) FROM jsonb_array_elements(classifications) AS item
             );
         ''').format(table=table()))
     else:
@@ -120,8 +125,11 @@ try {
     assert.equal(row.page_scheme, "http");
     assert(row.total_ms >= 1200 && row.judge_ms >= 0);
     singleDate(row);
-    assert(row.classifications.every((item: any) => item.remove && item.model_version === "jev-latest" && item.policy_version === "5"));
-    assert(!("receipt" in row.classifications[0]));
+    assert(row.classifications.length > 0);
+    for (const item of row.classifications) {
+      assert.deepEqual(Object.keys(item).sort(), ["id", "revision", "text", "ad_score", "unsafe_score", "reasons", "ad_threshold", "safety_threshold"].sort());
+      assert(item.reasons.length > 0);
+    }
   }
   console.log("PASS: actual removals, passage scores, a single date and latency persist in Tiger; inputs stay excluded");
 
@@ -193,20 +201,23 @@ try {
   assert.equal(metrics.unsafe_content, 2);
   const beforeMigration = await rows();
   const judgmentsBeforeRestart = (await judgments()).length;
-  await api.stop();
-  await database("legacy");
-  await api.start();
-  const migrated = await rows();
-  assert.equal(migrated.length, 3, "Records did not survive migration/restart");
-  for (const row of migrated) {
-    singleDate(row);
-    const previous = beforeMigration.find(previous => previous.event_id === row.event_id)!;
-    assert.equal(row.date, previous.date);
-    assert.equal(row.removed_text, previous.removed_text);
-    assert(JSON.stringify(row.classifications) === JSON.stringify(previous.classifications));
+  for (const format of ["legacy", "metadata"] as const) {
+    await api.stop();
+    await database(format);
+    await api.start();
+    const migrated = await rows();
+    assert.equal(migrated.length, 3, "Records did not survive migration/restart");
+    for (const row of migrated) {
+      singleDate(row);
+      const previous = beforeMigration.find(previous => previous.event_id === row.event_id)!;
+      assert.equal(row.date, previous.date);
+      assert.equal(row.removed_text, previous.removed_text);
+      assert.equal(row.judge_ms, previous.judge_ms);
+      assert(JSON.stringify(row.classifications) === JSON.stringify(previous.classifications));
+    }
+    assert.equal((await judgments()).length, judgmentsBeforeRestart);
   }
-  assert.equal((await judgments()).length, judgmentsBeforeRestart);
-  console.log("PASS: dual classifications count once; legacy dates migrate without losing content, scores, or judgment history");
+  console.log("PASS: dual classifications count once; legacy dates/metadata migrate without losing content, scores, or row-level timing");
 
   // Use a real refused TCP connection, not a substituted database client.
   const reservation = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("") });

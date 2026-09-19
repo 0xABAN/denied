@@ -155,9 +155,7 @@ def removal_row(item: Removal, key: str) -> dict:
         reasons=sorted({reason for claim in claims for reason in claim.decision.reasons}),
         judge_ms=max(claim.judge_ms for claim in claims),
         classifications=[{
-            **claim.decision.model_dump(exclude={"receipt"}), "text": passage.text,
-            "judge_ms": claim.judge_ms,
-            "policy_version": claim.policy_version, "model_version": claim.model_version,
+            **claim.decision.model_dump(exclude={"receipt", "remove"}), "text": passage.text,
             "ad_threshold": claim.ad_threshold, "safety_threshold": claim.safety_threshold,
         } for claim, passage in zip(claims, item.passages)],
     )

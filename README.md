@@ -49,12 +49,12 @@ On startup, the API creates two ordinary PostgreSQL tables, `denied.judgments` a
 **`denied.removals` records actual browser deletions**, never just positive model decisions. Each row contains:
 
 - Up to 24,000 characters of removed visible text and a truncation flag. No HTML or media capture; an opaque ad slot may have no text.
-- Advertising, unsafe-content, or both classifications, with triggering passage text, scores, active thresholds, and model/policy versions.
+- Advertising, unsafe-content, or both classifications. Each entry contains only `id`, `revision`, `text`, `ad_score`, `unsafe_score`, `reasons`, `ad_threshold`, and `safety_threshold`.
 - Page hostname and protocol, plus document/target/revision identifiers for deduplication. No full URL address metadata.
 - One UTC `date` timestamp: when the browser removed the block. Judgment rows likewise have one `date`, marking when the server completed evaluation. The two clocks may differ.
 - The server's Jev evaluation duration for the triggering batch, and the browser's measured detection-to-removal duration, including queuing and animation. Batch latency is shared by its passages, not a separate measurement for each passage.
 
-Upgrading an existing removal table preserves `removed_at` as `date` and removes `detected_at`, `judged_at`, `recorded_at`, and nested judgment timestamps. Text, scores, classifications, and duration fields are preserved. Migration runs transactionally on backend startup with recording enabled. After upgrading, restart the API, reload the extension, and refresh existing tabs for the new removal payload.
+Upgrading an existing removal table preserves `removed_at` as `date` and removes `detected_at`, `judged_at`, `recorded_at`, and nested judgment timestamps. Existing classification entries also have redundant `remove`, `policy_version`, `model_version`, and `judge_ms` keys removed. Text, scores, reasons, thresholds, and row-level duration fields are preserved. Migration runs transactionally on backend startup with recording enabled. After upgrading, restart the API, reload the extension, and refresh existing tabs for the new removal payload.
 
 Judgment writes run after the inference response, using FastAPI's background tasks. `POST /outcomes` separately accepts short-lived signed receipts; callers cannot supply their own classifications or thresholds. Removal reports retry once and are idempotent. The shared backend token never enters the extension. Database failure does not prevent filtering: `/health` and the popup's API check report history errors, and failed removal delivery also appears in page status. **This is best-effort recording, not a durable outbox**; a failed write or process/tab/worker shutdown can lose records.
 
@@ -109,7 +109,7 @@ This sends the eight synthetic examples in `tests/cases.json` to the real provid
 
 ### Recorded integration verification — policy 5
 
-For the all-judgments/single-date change, typecheck/build, all seven real API tests, and all six real Tiger integration groups passed. Checks included retained passages, legacy-date migration without losing content or scores, idempotency, tampering, and database failure/recovery; the disposable schema was removed afterward. The earlier policy-5 baseline also passed all 14 browser checks, including example.com, Python's about page, and loaded advertising slots on W3Schools; that broader suite was not repeated for this storage change. The originally reported Reddit failure remains unconfirmed on the user's actual page. These are integration samples, not measured false-positive rates or child-safety guarantees.
+For the all-judgments/single-date change, typecheck/build, all seven real API tests, and all six real Tiger integration groups passed. Checks included retained passages, exact classification fields, migration from both legacy-date and single-date schemas without losing content or scores, idempotency, tampering, and database failure/recovery; the disposable schema was removed afterward. The earlier policy-5 baseline also passed all 14 browser checks, including example.com, Python's about page, and loaded advertising slots on W3Schools; that broader suite was not repeated for this storage change. The originally reported Reddit failure remains unconfirmed on the user's actual page. These are integration samples, not measured false-positive rates or child-safety guarantees.
 
 ## Architecture
 

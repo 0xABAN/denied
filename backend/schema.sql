@@ -25,12 +25,20 @@ BEGIN
                WHERE table_schema = {schema} AND table_name = 'removals' AND column_name = 'removed_at') THEN
         ALTER TABLE {table} RENAME COLUMN removed_at TO date;
         ALTER TABLE {table} DROP COLUMN detected_at, DROP COLUMN judged_at, DROP COLUMN recorded_at;
-        UPDATE {table} SET classifications = COALESCE(
-            (SELECT jsonb_agg(item - 'judged_at') FROM jsonb_array_elements(classifications) AS item),
-            '[]'::jsonb
-        );
     END IF;
 END $$;
+
+-- Prune old JSON metadata even when the date-column migration already ran.
+-- ponytail: scan at startup; use versioned migrations if history grows large.
+UPDATE {table} SET classifications = COALESCE(
+    (SELECT jsonb_agg(item - ARRAY['judged_at', 'remove', 'policy_version', 'model_version', 'judge_ms'])
+     FROM jsonb_array_elements(classifications) AS item),
+    '[]'::jsonb
+)
+WHERE EXISTS (
+    SELECT 1 FROM jsonb_array_elements(classifications) AS item
+    WHERE item ?| ARRAY['judged_at', 'remove', 'policy_version', 'model_version', 'judge_ms']
+);
 CREATE INDEX IF NOT EXISTS removals_date_idx ON {table} (date DESC);
 
 -- One row per passage per actual Jev evaluation, including keep decisions.
