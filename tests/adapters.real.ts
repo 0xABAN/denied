@@ -8,7 +8,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium } from "playwright";
-import type { Batch, Judgments, PageStats } from "../extension/src/contracts";
+import { judgmentsFrom, type Batch, type Judgments, type PageStats } from "../extension/src/contracts";
 import { adapterFixtures, fixturePage } from "./adapters.fixtures";
 import { localAPI, until } from "./api";
 import { observeJudgments } from "./observe-judgments";
@@ -44,6 +44,8 @@ const site = Bun.serve({ hostname: "127.0.0.1", port: 0, tls: { key: Bun.file(ke
   if (!fixture) return new Response(null, { status: 404 });
   localRequests++;
   let html = fixture.site === "youtube" && url.pathname === "/watch" ? watch : fixturePage(fixture);
+  // No graphic wording: entity knowledge must identify this complete video card.
+  if (fixture.site === "youtube" && url.pathname !== "/watch") html = html.replace("Tickets for sale. Send me a message to buy them for $40.", "Black Ops 7");
   // The tiny badge, not a sales pitch in the body, must identify the whole X post.
   if (fixture.site === "x") html = html.replace("Tickets for sale. Send me a message to buy them for $40.", "The school garden has flowers and butterflies.");
   return new Response(html, { headers: { "Content-Type": "text/html" } });
@@ -85,8 +87,21 @@ try {
     for (const id of ["navigation", "composer"]) assert.equal(await page.locator(`#${id}`).count(), 1);
     assert.equal((await stats()).total, 1, `${fixture.site}: count once per logical item`);
     const judgments = observations.slice(before).flatMap(record => record.result?.results || []);
-    assert(judgments.some(result => result.reasons.includes("advertising")), `${fixture.site}: require actual advertising judgment`);
+    const reason = fixture.site === "youtube" ? "unsafe_content" : "advertising";
+    assert(judgments.some(result => result.reasons.includes(reason)), `${fixture.site}: require actual ${reason} judgment`);
     assert(judgments.some(result => !result.remove), `${fixture.site}: require actual keep judgment`);
+    if (fixture.site === "youtube") {
+      assert(judgments.some(result => result.remove && result.violent_entity_score >= 0.80));
+      assert.equal((await stats()).unsafe_content, 1, "Entity judgment counts once under the existing safety filter");
+      const observed = observations.slice(before).find(record => record.result)!;
+      // Validate malformed copies at the parser boundary, never feed substituted
+      // responses into the extension or replace the actual inference service.
+      for (const score of [undefined, null, -0.1, 1.1, NaN, Infinity, "0.9", true]) {
+        const invalid: any = structuredClone(observed.result);
+        invalid.results[0].violent_entity_score = score;
+        assert.throws(() => judgmentsFrom(invalid, observed.batch), "Third score must be present and finite in [0, 1]");
+      }
+    }
     console.log(`PASS: ${fixture.site} synthetic layout, real provider, whole item removed and neighbor preserved`);
   }
 

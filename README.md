@@ -1,6 +1,6 @@
 # denied.
 
-A local-first Chrome extension demo for under-13 text/link filtering and advertisement removal. Flagged blocks glow, pop, and disappear. The Python API supplies two independent Jev judgments; the browser owns discovery and animation.
+A local-first Chrome extension demo for under-13 text/link filtering and advertisement removal. Flagged blocks glow, pop, and disappear. The Python API supplies three independent Jev judgments; the browser owns discovery and animation.
 
 The advertising category also covers commercial solicitation: private sales, ticket resale, merchant listings, and paid-service offers, even when legitimate. Neutral discussion of products or past purchases is not a sales offer. Filtering does not guarantee purchase prevention.
 
@@ -48,11 +48,17 @@ Native video/audio playback is paused before a current removal starts, including
 
 The extension does not download or analyze media, follow links, or use a new model/provider. Benign or misleading metadata can conceal unsafe videos. This remains reactive removal, not prevention of initial exposure.
 
+### Known violent entities
+
+Policy 9 adds a separate question about known violent games, franchises, entities and concepts that are inappropriate for children under 13. It uses reliable background knowledge from the supplied title/description, without inspecting footage. Gameplay and trailers count; incidental mentions and clearly age-appropriate educational, critical or preventive discussion do not. Unfamiliar names must not acquire invented facts.
+
+The independent `violent_entity_score` uses the existing `DENIED_SAFETY_THRESHOLD` (default `0.80`). Either safety question can trigger `unsafe_content`; both matching still count as one removal and one safety reason. The original advertising and direct-safety criteria are unchanged. Restart the API, reload the extension and refresh existing tabs after upgrading; the extension now requires all three scores.
+
 ## Whole-item site adapters
 
 Adapters for 26 web apps—including YouTube, Amazon, X, GroupMe, Gmail and Outlook—associate evidence with a complete item before classification. A post's sponsorship badge can remove the post, not just the badge. A video title can remove its card or the associated watch-page regions. Opened emails are individual targets; inbox rows representing whole conversations are not expanded into thread removals.
 
-The existing Jev policy and thresholds are unchanged. Ordinary sales offers remain advertising under that policy, so commerce sites can lose many product listings. No site-specific keyword rules decide what gets blocked.
+Adapters do not change Jev policy or thresholds. Ordinary sales offers remain advertising under that policy, so commerce sites can lose many product listings. No site-specific keyword rules decide what gets blocked.
 
 Independent replies, reviews, recommendations, drafts and shared author identity are excluded from the parent's scope. Site IDs, raw link identity and membership fingerprints stay local. Whole-root items retain the existing animation; disjoint regions and shared wrappers use a synchronous guarded removal without animation. Shared header shells may remain rather than risk deleting surviving content. These are local display changes, never server-side message/email deletion, archive actions or purchases.
 
@@ -66,17 +72,19 @@ Set a private `BACKEND_API_TOKEN` of at least 32 characters. Generate one locall
 
 On startup, the API creates two ordinary PostgreSQL tables, `denied.judgments` and `denied.removals`. Existing unrelated tables are untouched. Set `DENIED_RECORD_HISTORY=0` to disable both kinds of recording without disabling filtering. The old `DENIED_RECORD_REMOVALS` setting remains a fallback when the new setting is absent, so an existing off switch stays off.
 
-**`denied.judgments` records every successfully judged passage**, including `keep` decisions. It stores bounded text, link/ad evidence, page hostname/protocol, both scores, decision/reasons, active thresholds, model/policy versions, and `judge_ms`. Document/target/candidate/revision IDs identify the case; a fresh `batch_id` identifies each actual Jev evaluation. Re-evaluations are separate judgments, not duplicates. This enables review of suspected false negatives, but a keep decision is not itself evidence of failure: human labels are still needed. Content the scanner never checked, and failed provider calls without a valid judgment, are not represented.
+**`denied.judgments` records every successfully judged passage**, including `keep` decisions. It stores bounded text, link/ad evidence, page hostname/protocol, all three scores, decision/reasons, active thresholds, model/policy versions, and `judge_ms`. Document/target/candidate/revision IDs identify the case; a fresh `batch_id` identifies each actual Jev evaluation. Re-evaluations are separate judgments, not duplicates. This enables review of suspected false negatives, but a keep decision is not itself evidence of failure: human labels are still needed. Content the scanner never checked, and failed provider calls without a valid judgment, are not represented.
 
 **`denied.removals` records actual browser deletions**, never just positive model decisions. Each row contains:
 
 - Up to 24,000 characters of removed visible text and a truncation flag. No HTML or media capture; an opaque ad slot may have no text.
-- Advertising, unsafe-content, or both classifications. Each entry contains only `id`, `revision`, `text`, `ad_score`, `unsafe_score`, `reasons`, `ad_threshold`, and `safety_threshold`.
+- Advertising, unsafe-content, or both classifications. Each entry contains only `id`, `revision`, `text`, `ad_score`, `unsafe_score`, `violent_entity_score`, `reasons`, `ad_threshold`, and `safety_threshold`.
 - Page hostname and protocol, plus document/target/revision identifiers for deduplication. No full URL address metadata.
 - One UTC `date` timestamp: when the browser removed the block. Judgment rows likewise have one `date`, marking when the server completed evaluation. The two clocks may differ.
 - The server's Jev evaluation duration for the triggering batch, and the browser's measured detection-to-removal duration, including queuing and animation. Batch latency is shared by its passages, not a separate measurement for each passage.
 
 Upgrading an existing removal table preserves `removed_at` as `date` and removes `detected_at`, `judged_at`, `recorded_at`, and nested judgment timestamps. Existing classification entries also have redundant `remove`, `policy_version`, `model_version`, and `judge_ms` keys removed. Text, scores, reasons, thresholds, and row-level duration fields are preserved. Migration runs transactionally on backend startup with recording enabled. After upgrading, restart the API, reload the extension, and refresh existing tabs for the new removal payload.
+
+The additive entity-score migration leaves historical judgment rows `NULL` (not assessed), rather than fabricating a safe score. Existing signed pre-v9 removal receipts remain valid until expiry; their entity score is likewise unassessed.
 
 Judgment writes run after the inference response, using FastAPI's background tasks. `POST /outcomes` separately accepts short-lived signed receipts; callers cannot supply their own classifications or thresholds. Removal reports retry once and are idempotent. The shared backend token never enters the extension. Database failure does not prevent filtering: `/health` and the popup's API check report history errors, and failed removal delivery also appears in page status. **This is best-effort recording, not a durable outbox**; a failed write or process/tab/worker shutdown can lose records.
 
@@ -148,7 +156,7 @@ bun run test:live
 DENIED_API_URL=http://127.0.0.1:8766 bun run test:live
 ```
 
-This sends the eight synthetic examples in `tests/cases.json` to the real provider. It exits unsuccessfully if judgments differ from the labels. These are controlled inputs, not observations of live websites. Review individual mistakes before changing thresholds; eight examples are not a general safety benchmark.
+This sends the 19 synthetic examples in `tests/cases.json` to the real provider, including violent-game titles, educational exceptions and an unfamiliar game name. It exits unsuccessfully if judgments differ from the labels. These are controlled inputs, not observations of live websites. Review individual mistakes before changing thresholds; this small fixture is not a general safety benchmark.
 
 ### Recorded integration verification — policy 5
 
@@ -174,9 +182,9 @@ Bun bundles TypeScript; Chrome runs the output. The backend uses FastAPI, HTTPX,
 
 ## Limits and privacy
 
-- Removal requires `ad_score >= 0.70` **or** `unsafe_score >= 0.80` by default. These are uncalibrated model scores, not verified 70%/80% certainty. Higher thresholds trade fewer false removals for more missed targets. Set `DENIED_AD_THRESHOLD` and `DENIED_SAFETY_THRESHOLD` in `backend/.env` and restart the API; `/health` reports the active values.
-- Both questions receive page, link, and iframe-source hostnames and URL schemes. Domain reputation and HTTP/HTTPS are context, not allowlists or automatic decisions. A familiar domain or HTTPS does not guarantee child-appropriate content or exempt advertisements; unknown schemes remain unknown.
-- The browser starts scanning without an initial delay and dispatches waves of up to 600 blocks. The worker coalesces up to 30 twenty-block batches over an eight-millisecond collection window, then sends them through `/judge-stream` on one HTTP connection (splitting transports near the 2 MB body limit). The backend starts those provider requests in parallel and streams each batch result independently. This avoids Chrome's per-origin HTTP/1 connection queue. Wave starts are at least five seconds apart. Each block has separately identified ad and safety judgments; server-owned policy is included once per provider request.
+- Removal requires `ad_score >= 0.70`, `unsafe_score >= 0.80`, **or** `violent_entity_score >= 0.80` by default. These are uncalibrated model scores, not verified 70%/80% certainty. Higher thresholds trade fewer false removals for more missed targets. Set `DENIED_AD_THRESHOLD` and `DENIED_SAFETY_THRESHOLD` in `backend/.env` and restart the API; `/health` reports the active values.
+- All three questions receive page, link, and iframe-source hostnames and URL schemes. Domain reputation and HTTP/HTTPS are context, not allowlists or automatic decisions. A familiar domain or HTTPS does not guarantee child-appropriate content or exempt advertisements; unknown schemes remain unknown.
+- The browser starts scanning without an initial delay and dispatches waves of up to 600 blocks. The worker coalesces up to 30 twenty-block batches over an eight-millisecond collection window, then sends them through `/judge-stream` on one HTTP connection (splitting transports near the 2 MB body limit). The backend starts those provider requests in parallel and streams each batch result independently. This avoids Chrome's per-origin HTTP/1 connection queue. Wave starts are at least five seconds apart. Each block has separately identified advertising, direct-safety and violent-entity judgments; server-owned policy is included once per provider request.
 - Each completed batch updates the page immediately. Waves can overlap: another wave of up to 600 pending blocks can start five seconds after the prior start, even while earlier responses remain outstanding. In-flight revisions are not redispatched.
 - Discovery groups leaf articles/list items and compact, visibly bounded repeated containers into coherent targets. These generic structure/layout rules define boundaries, never ad classifications. Nested collections and ambiguous containers retain smaller targets; surrounding conversation context is not inferred in this first pass.
 - Shared backend admission limits starts to 1,200 per rolling minute. Provider token throttling is handled through 429/529 backoff; JSON bytes are not treated as tokens. Browser dispatch cadence does not guarantee provider completion within five seconds.

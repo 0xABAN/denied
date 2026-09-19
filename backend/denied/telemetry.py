@@ -100,6 +100,7 @@ def prepare_judgments(batch: Batch, judgments: Judgments, key: str, judge_ms: in
             "page_host": batch.page_host, "page_scheme": batch.page_scheme,
             "text": candidate.text, "links": [link.model_dump() for link in candidate.links], "ad": candidate.ad.model_dump(),
             "ad_score": decision.ad_score, "unsafe_score": decision.unsafe_score,
+            "violent_entity_score": decision.violent_entity_score,
             "decision": "remove" if decision.remove else "keep", "reasons": decision.reasons,
             "ad_threshold": ad_threshold, "safety_threshold": safety_threshold,
             "policy_version": judgments.policy_version, "model_version": model_version, "judge_ms": judge_ms,

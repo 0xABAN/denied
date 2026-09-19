@@ -77,6 +77,9 @@ class Decision(StrictModel):
     revision: int
     ad_score: Probability
     unsafe_score: Probability
+    # Missing on signed pre-v9 receipts; null means not assessed, not safe.
+    # Current judgments always supply a validated score from the third question.
+    violent_entity_score: Probability | None = None
     remove: bool
     reasons: list[Reason]
     receipt: str | None = None

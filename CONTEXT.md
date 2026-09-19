@@ -4,7 +4,7 @@
 
 A Chrome extension for children ages 0-12 that removes advertisements and unsafe text/link content from web pages. Use one under-13 policy, without detecting a user's age or maintaining age profiles.
 
-Two independent filters share the same interaction:
+Two filter categories share the same interaction:
 
 - Advertising/commercial solicitation: remove detected paid advertisements, sponsored placements, and all offers to sell goods or services, including legitimate private resale and merchant listings. Sponsorship or fraud is not required for a sales offer. Preserve neutral product discussion, past-purchase accounts, and commerce education.
 - Child safety: remove text or linked solicitations that violate the policy, even when they are not advertisements.
@@ -17,7 +17,9 @@ This is reactive filtering. Content remains visible during scanning, inference, 
 
 Inspect rendered text, link labels and destinations, and relevant DOM metadata. The initial safety policy covers explicit sexual content, grooming, graphic descriptions of violence, encouragement of self-harm, dangerous instructions or challenges, promotion of dangerous drug use, gambling, and scams. Legitimate educational, medical, and preventive discussion must not be blocked solely for mentioning these topics.
 
-Urgency, a request for credentials or money, and a different destination domain are evidence, not independent proof of unsafe content. Both judgments consider page/link domains, known reputation, and URL schemes alongside the content. Unencrypted HTTP can increase concern, especially for credential or payment requests. A familiar domain may support trust, but neither reputation nor HTTPS guarantees child-appropriate content or exempts advertising. Do not invent reputations for unfamiliar domains, maintain a trusted-domain allowlist, or treat an unknown scheme as HTTP.
+Policy 9 adds an independent known-violent-entity question: use reliable background knowledge to recognize violent games, franchises, entities or concepts inappropriate for under-13s from the supplied metadata. Gameplay, trailers and entertainment centered on these subjects count, even without explicit violent wording. Incidental mentions and clearly age-appropriate educational, critical or preventive discussion do not. Never invent facts about unfamiliar names or claim to have inspected unseen footage.
+
+Urgency, a request for credentials or money, and a different destination domain are evidence, not independent proof of unsafe content. The advertising and direct-safety judgments consider page/link domains, known reputation, and URL schemes alongside the content. Unencrypted HTTP can increase concern, especially for credential or payment requests. A familiar domain may support trust, but neither reputation nor HTTPS guarantees child-appropriate content or exempts advertising. Do not invent reputations for unfamiliar domains, maintain a trusted-domain allowlist, or treat an unknown scheme as HTTP.
 
 Image, audio, and video interpretation are out of scope. On-page video titles/descriptions and media title/accessibility-description attributes are text evidence: metadata explicitly offering or describing prohibited content can justify removing its associated listing or player without inspecting the media. Educational and medical exceptions still apply. An identifiable media advertisement can likewise be removed as a whole container without analyzing its contents. Neither behavior provides general media safety. Do not follow links, resolve redirect chains, or claim their destination pages have been checked.
 
@@ -78,10 +80,11 @@ Start with the top-level document. Cross-origin frame contents, closed shadow ro
 
 ### Judgment contract
 
-The backend constructs two separately identified Noul questions per block, with up to 20 blocks per Jev request. The extension multiplexes up to 30 such batches through one bounded NDJSON `/judge-stream` transport, avoiding the browser HTTP/1 six-connection queue. Each result carries its input batch index and is validated against that batch before delivery. Partial failures leave successful siblings usable; incomplete/malformed streams fail outstanding batches. The original `/judge` endpoint remains available. Server-owned policy is included once in state, with questions explicitly referencing the policy and their candidate:
+The backend constructs three separately identified Noul questions per block, with up to 20 blocks per Jev request. The extension multiplexes up to 30 such batches through one bounded NDJSON `/judge-stream` transport, avoiding the browser HTTP/1 six-connection queue. Each result carries its input batch index and is validated against that batch before delivery. Partial failures leave successful siblings usable; incomplete/malformed streams fail outstanding batches. The original `/judge` endpoint remains available. Server-owned policy is included once in state, with questions explicitly referencing the policy and their candidate:
 
 1. Is this element advertising or an offer to sell goods or services or solicit a purchase?
 2. Does its text or linked solicitation violate the under-13 content policy?
+3. Does this item feature or promote a known violent game, franchise, entity, or concept that is inappropriate for children under 13—even when its title or description does not explicitly describe violence?
 
 Send these to `POST https://api.typesafe.ai/v1/systemone`. Give each candidate an explicit letter-keyed object (`item_A`, `item_B`, ...) for its questions to reference; omit DOM tracking IDs and revisions from model state. Numeric list references were confused with numeric tracking IDs during real testing. Keep those IDs in code for response routing. Treat all page material as untrusted evidence, never model instructions. Clients supply evidence rather than arbitrary questions, prompts, or fetch destinations.
 
@@ -90,10 +93,12 @@ Reuse provider connections with a 60-second idle expiry. HTTPX's five-second def
 Validate returned scores as finite numbers in `[0, 1]`. Apply separate, server-owned thresholds:
 
 ```text
-remove = ad_score >= ad_threshold OR unsafe_score >= safety_threshold
+remove = ad_score >= ad_threshold
+      OR unsafe_score >= safety_threshold
+      OR violent_entity_score >= safety_threshold
 ```
 
-Return the candidate ID, revision, both scores, removal decision, matching filter reasons, and policy version. Reasons identify advertising, unsafe content, or both; do not manufacture a detailed explanation unsupported by the judgments. The default thresholds are 0.70 for advertising and 0.80 for unsafe content. Tune them against labeled examples before claiming useful accuracy. Scores are not calibrated safety probabilities; 0.80 does not establish 80% certainty.
+Return the candidate ID, revision, all three scores, removal decision, matching filter reasons, and policy version. Keep the direct-safety and entity scores separate; either can trigger the single `unsafe_content` reason at the existing safety threshold. Reasons identify advertising, unsafe content, or both; do not manufacture a detailed explanation unsupported by the judgments. The default thresholds are 0.70 for advertising and 0.80 for unsafe content. Tune them against labeled examples before claiming useful accuracy. Scores are not calibrated safety probabilities; 0.80 does not establish 80% certainty.
 
 ### Applying results and handling failure
 
@@ -111,7 +116,9 @@ The authoritative `/judge` API signs positive judgments with a backend-only secr
 
 Store one idempotent actual-removal record per document/target/revision in Tiger, even when both reasons match. Use the existing native `PG_*` credentials, TLS, and a private `BACKEND_API_TOKEN` for history/metrics reads. Keep database access bounded and separate from inference. A storage outage must not prevent filtering; report the history failure separately. Delivery retries once but is not durable across tab/worker shutdown, so do not claim a complete audit trail.
 
-Store up to 24,000 characters of removed visible text, flag truncation, and retain triggering-block scores and thresholds. Each `classifications` entry contains only `id`, `revision`, `text`, `ad_score`, `unsafe_score`, `reasons`, `ad_threshold`, and `safety_threshold`; do not duplicate `remove`, version fields, or `judge_ms` there. Keep duration metrics on the row and version metadata on judgment rows. Judgment text is bounded to 24,000 characters per block. Do not store raw HTML, unscanned browsing content, input values, or editable drafts. Textless media is discovered alongside text blocks and may be judged from its available metadata without reading embedded content.
+Store up to 24,000 characters of removed visible text, flag truncation, and retain triggering-block scores and thresholds. Each `classifications` entry contains only `id`, `revision`, `text`, `ad_score`, `unsafe_score`, `violent_entity_score`, `reasons`, `ad_threshold`, and `safety_threshold`; do not duplicate `remove`, version fields, or `judge_ms` there. Keep duration metrics on the row and version metadata on judgment rows. Judgment text is bounded to 24,000 characters per block. Do not store raw HTML, unscanned browsing content, input values, or editable drafts. Textless media is discovered alongside text blocks and may be judged from its available metadata without reading embedded content.
+
+The additive `violent_entity_score` judgment column is nullable for historical rows that never answered that question. Do not backfill a safe score. Honor unexpired signed pre-v9 receipts with an unassessed/null entity score; current provider responses must supply all three finite scores.
 
 Each row has exactly one UTC timestamp named `date`: server evaluation completion for a judgment, browser deletion time for a removal. Keep `judge_ms` and removal `total_ms` as durations, not extra date fields. Migrate existing removal time to `date` and remove the other top-level/nested timestamps while preserving content and scores. Browser and server clocks can differ. There is no automatic retention policy in this demo.
 

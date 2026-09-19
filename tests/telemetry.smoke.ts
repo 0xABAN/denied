@@ -52,7 +52,8 @@ with connect() as connection:
                 ALTER TABLE {table} ADD COLUMN detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                                    ADD COLUMN judged_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                                    ADD COLUMN recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
-            ''').format(table=table()))
+                ALTER TABLE {judgments} DROP COLUMN violent_entity_score;
+            ''').format(table=table(), judgments=table('judgments')))
         connection.execute(sql.SQL('''
             UPDATE {table} SET classifications = (
                 SELECT jsonb_agg(item || jsonb_build_object(
@@ -128,7 +129,7 @@ try {
     singleDate(row);
     assert(row.classifications.length > 0);
     for (const item of row.classifications) {
-      assert.deepEqual(Object.keys(item).sort(), ["id", "revision", "text", "ad_score", "unsafe_score", "reasons", "ad_threshold", "safety_threshold"].sort());
+      assert.deepEqual(Object.keys(item).sort(), ["id", "revision", "text", "ad_score", "unsafe_score", "violent_entity_score", "reasons", "ad_threshold", "safety_threshold"].sort());
       assert(item.reasons.length > 0);
     }
   }
@@ -149,6 +150,7 @@ try {
       assert(row && row.text === candidate.text);
       assert.equal(row.ad_score, decision.ad_score);
       assert.equal(row.unsafe_score, decision.unsafe_score);
+      assert.equal(row.violent_entity_score, decision.violent_entity_score);
       assert.equal(row.decision, decision.remove ? "remove" : "keep");
       assert(JSON.stringify(row.links) === JSON.stringify(candidate.links));
       assert.equal(row.page_host, batch.page_host);
@@ -216,9 +218,11 @@ try {
       assert.equal(row.judge_ms, previous.judge_ms);
       assert(JSON.stringify(row.classifications) === JSON.stringify(previous.classifications));
     }
-    assert.equal((await judgments()).length, judgmentsBeforeRestart);
+    const oldJudgments = await judgments();
+    assert.equal(oldJudgments.length, judgmentsBeforeRestart);
+    assert(oldJudgments.every(row => row.violent_entity_score === null), "Pre-column judgments must remain unassessed, not safe/zero");
   }
-  console.log("PASS: dual classifications count once; legacy dates/metadata migrate without losing content, scores, or row-level timing");
+  console.log("PASS: legacy schemas migrate without losing stored content or scores; new entity column leaves historical rows null");
 
   // Use a real refused TCP connection, not a substituted database client.
   const reservation = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("") });
@@ -236,6 +240,18 @@ try {
   await page.waitForSelector("#history-recovered", { state: "detached" });
   await until(async () => (await rows()).length === 4, "recording recovered with actual Tiger connection");
   console.log("PASS: real database connection failure does not prevent filtering; recording recovers");
+
+  await add("history-entity", "Black Ops 7");
+  await page.waitForSelector("#history-entity", { state: "detached" });
+  await until(async () => (await rows()).length === 5, "entity-only removal persisted");
+  const entity = (await rows()).find(row => row.removed_text === "Black Ops 7");
+  assert.deepEqual(entity.reasons, ["unsafe_content"]);
+  assert(entity.classifications.some((item: any) => item.violent_entity_score >= 0.80));
+  await until(async () => (await judgments()).some(row => row.text === "Black Ops 7" && row.violent_entity_score >= 0.80), "new entity score stored after schema upgrade");
+  const finalMetrics = await query("/metrics");
+  assert.equal(finalMetrics.total_removals, 5);
+  assert.equal(finalMetrics.unsafe_content, 4);
+  console.log("PASS: separate entity scores persist in judgments and signed removals and count once under unsafe content");
 } finally {
   await context?.close();
   site.stop(true);

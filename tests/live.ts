@@ -22,7 +22,7 @@ for (const result of body.results) {
   const expected = cases[Number(result.id)];
   const correct = result.reasons.includes("advertising") === expected.ad && result.reasons.includes("unsafe_content") === expected.unsafe;
   if (!correct) mismatches++;
-  console.log(`${correct ? "PASS" : "FAIL"} ${expected.name}: ad=${result.ad_score.toFixed(3)} unsafe=${result.unsafe_score.toFixed(3)}`);
+  console.log(`${correct ? "PASS" : "FAIL"} ${expected.name}: ad=${result.ad_score.toFixed(3)} unsafe=${result.unsafe_score.toFixed(3)} violent_entity=${result.violent_entity_score.toFixed(3)}`);
 }
 console.log(`${cases.length - mismatches}/${cases.length} cases; ${Math.round(performance.now() - started)}ms API round trip. This small fixture is not a general safety benchmark.`);
 assert.equal(mismatches, 0, "Live judgments differed from the fixture labels; review errors before changing thresholds.");

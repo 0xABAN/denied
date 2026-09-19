@@ -1,6 +1,6 @@
 # Site adapters
 
-Adapters identify the item that supplied evidence. They do not classify content, change policy 8, or introduce per-site blocking rules. A negative result means the existing advertising or under-13 policy returned `remove: true`. The advertising policy includes ordinary sales offers, not only paid placements.
+Adapters identify the item that supplied evidence. They do not classify content, change classifier policy, or introduce per-site blocking rules. A negative result means the existing advertising or under-13 policy returned `remove: true`. The advertising policy includes ordinary sales offers, not only paid placements.
 
 All effects are browser-local DOM changes. Never click a site's delete/archive controls, call account APIs, read drafts, fetch attachments, or collect full-page dumps. Visible chat and email text follows the existing backend/Jev and optional judgment-history path.
 
@@ -101,7 +101,7 @@ The later public survey found accepted item boundaries for YouTube search, Threa
 
 ## Verification and safety limits
 
-- `bun run build && bun run test:adapters`: 26 site fixtures through the real built extension/backend/provider, including a badge-only X ad; one kept neighbor and one logical removal per fixture. The additional watch-page case verifies a paused native player, disjoint removal, preserved comments/recommendations and one logical count. Provider failures fail the test; responses are not substituted. Browser-only hostname mapping points explicitly synthetic pages at an actual local HTTPS fixture server.
+- `bun run build && bun run test:adapters`: 26 site fixtures through the real built extension/backend/provider, including a title-only Black Ops 7 video and a badge-only X ad; one kept neighbor and one logical removal per fixture. The additional watch-page case verifies a paused native player, disjoint removal, preserved comments/recommendations and one logical count. Provider failures fail the test; responses are not substituted. Browser-only hostname mapping points explicitly synthetic pages at an actual local HTTPS fixture server.
 - The structural browser tests cover all 44 declared rule shapes, private fields, editable drafts, owned action controls, shared sender identity, independent replies, deceptive hostname rejection and text-only link identity changes. They also cover repeated part IDs inside protected regions and synchronous custom-element mutations between deletions.
 - `bun run observe:adapters` is a **read-only coverage survey**, not a passing support test. It reports loaded-but-unmatched, redirected and inaccessible layouts separately in the ignored `artifacts/adapters-live.json`; it samples at most 30 visible matches per rule. It performs no inference or removals and uses no signed-in profile. A missing match is not silently counted as support.
 - Shared identity is kept while a following headerless message can depend on it. Uncertain/empty shared header shells may remain. The implementation does not detach and rebuild surviving conversations.

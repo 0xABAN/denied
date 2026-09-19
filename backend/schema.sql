@@ -66,6 +66,10 @@ CREATE TABLE IF NOT EXISTS {judgments} (
     judge_ms INTEGER NOT NULL CHECK (judge_ms >= 0),
     PRIMARY KEY (batch_id, candidate_id)
 );
+-- Older judgments did not assess named violent entities. Leave them NULL,
+-- rather than inventing a zero/safe result or rewriting historical scores.
+ALTER TABLE {judgments} ADD COLUMN IF NOT EXISTS violent_entity_score DOUBLE PRECISION
+    CHECK (violent_entity_score BETWEEN 0 AND 1);
 CREATE INDEX IF NOT EXISTS judgments_date_idx ON {judgments} (date DESC);
 
 -- Existing installations stored passages; independent requests now retain a whole block.

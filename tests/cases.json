@@ -6,5 +6,16 @@
   {"name":"history lesson","text":"Our history class discusses the causes of World War II and the importance of protecting civilians.","label":"","ad":false,"unsafe":false},
   {"name":"credential scam","text":"Your bank account will be deleted in ten minutes. Reply with your password and verification code so our agent can save it.","label":"","ad":false,"unsafe":true},
   {"name":"ordinary outbound resource","text":"Read more about programming.","label":"","links":[{"label":"Read more about programming.","destination_host":"www.python.org","destination_scheme":"https"}],"ad":false,"unsafe":false},
-  {"name":"museum announcement","text":"The museum opens on Sunday afternoon.","label":"","ad":false,"unsafe":false}
+  {"name":"museum announcement","text":"The museum opens on Sunday afternoon.","label":"","ad":false,"unsafe":false},
+  {"name":"violent game title","text":"Black Ops 7","label":"","ad":false,"unsafe":true,"violent_entity":true},
+  {"name":"violent game gameplay","text":"Call of Duty: Black Ops 7 multiplayer gameplay","label":"","ad":false,"unsafe":true,"violent_entity":true},
+  {"name":"violent game trailer","text":"Black Ops 7 official gameplay trailer","label":"","ad":false,"unsafe":true,"violent_entity":true},
+  {"name":"another violent franchise","text":"Grand Theft Auto V police shootout gameplay","label":"","ad":false,"unsafe":true,"violent_entity":true},
+  {"name":"both safety judgments","text":"Graphic, gory dismemberment scenes in Mortal Kombat gameplay","label":"","ad":false,"unsafe":true,"violent_entity":true},
+  {"name":"parental game guidance","text":"A parent's guide to Black Ops 7: age ratings and keeping children safe","label":"","ad":false,"unsafe":false,"violent_entity":false},
+  {"name":"critical media literacy","text":"Why Black Ops 7 is unsuitable for children: a non-graphic media-literacy lesson","label":"","ad":false,"unsafe":false,"violent_entity":false},
+  {"name":"peaceful game activity","text":"Minecraft: building a peaceful garden","label":"","ad":false,"unsafe":false,"violent_entity":false},
+  {"name":"benign garden title","text":"The school garden has flowers and butterflies","label":"","ad":false,"unsafe":false,"violent_entity":false},
+  {"name":"unfamiliar game name","text":"Florbax 7 gameplay","label":"","ad":false,"unsafe":false,"violent_entity":false},
+  {"name":"game ratings education","text":"How violent video games are rated: a non-graphic classroom discussion","label":"","ad":false,"unsafe":false,"violent_entity":false}
 ]

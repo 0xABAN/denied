@@ -18,7 +18,7 @@ export type Candidate = {
   };
 };
 export type Batch = { document_id: string; page_host: string; page_scheme: string; candidates: Candidate[] };
-export type Decision = { id: string; revision: number; ad_score: number; unsafe_score: number; remove: boolean; reasons: Reason[]; receipt?: string | null };
+export type Decision = { id: string; revision: number; ad_score: number; unsafe_score: number; violent_entity_score: number; remove: boolean; reasons: Reason[]; receipt?: string | null };
 export type Removal = {
   document_id: string; target_id: string; revision: number;
   removed_text: string; text_truncated: boolean;
@@ -56,7 +56,7 @@ export function judgmentsFrom(value: unknown, batch: Batch): Judgments {
   const expected = new Map(batch.candidates.map(c => [c.id, c.revision]));
   for (const result of body.results) {
     if (!result || !expected.has(result.id) || expected.get(result.id) !== result.revision ||
-        [result.ad_score, result.unsafe_score].some(n => typeof n !== "number" || !Number.isFinite(n) || n < 0 || n > 1) ||
+        [result.ad_score, result.unsafe_score, result.violent_entity_score].some(n => typeof n !== "number" || !Number.isFinite(n) || n < 0 || n > 1) ||
         typeof result.remove !== "boolean" || !Array.isArray(result.reasons) ||
         (result.receipt != null && (typeof result.receipt !== "string" || !result.receipt.length || result.receipt.length > 4096)) ||
         result.reasons.some(r => !["advertising", "unsafe_content"].includes(r)) ||

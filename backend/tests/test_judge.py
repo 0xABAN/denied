@@ -1,6 +1,8 @@
 """Real TCP/FastAPI/provider checks. Run with uv run --env-file .env python -m unittest discover -s tests."""
 
 from contextlib import contextmanager
+from datetime import datetime, timezone
+import base64
 import copy
 import asyncio
 import json
@@ -16,9 +18,10 @@ from tempfile import NamedTemporaryFile
 import httpx
 from pydantic import ValidationError
 
-from denied.judge import ADDRESS_CONTEXT, AD_CRITERIA, SAFETY_CRITERIA, build_request, judge
+from denied.judge import ADDRESS_CONTEXT, AD_CRITERIA, SAFETY_CRITERIA, VIOLENT_ENTITIES, build_request, judge
 from denied.dispatch import Admission
-from denied.schemas import Batch, Noul
+from denied.schemas import Batch, Judgments, Noul
+from denied import telemetry
 
 BATCH = {
     "document_id": "real-api-test", "page_host": "controlled-example.test", "page_scheme": "http",
@@ -81,10 +84,15 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             results = response.json()["results"]
             self.assertEqual(len(results), len(examples))
+            threshold = client.get("/health").json()["safety_threshold"]
             for result, example in zip(results, examples):
                 expected = (["advertising"] if example["ad"] else []) + (["unsafe_content"] if example["unsafe"] else [])
                 self.assertEqual(result["reasons"], expected, example["name"])
                 self.assertEqual(result["remove"], bool(expected))
+                if "violent_entity" in example:
+                    self.assertEqual(result["violent_entity_score"] >= threshold, example["violent_entity"], example["name"])
+                if example["name"] == "both safety judgments":
+                    self.assertGreaterEqual(result["unsafe_score"], threshold)
 
     def test_twenty_blocks_use_one_actual_provider_request(self):
         batch = copy.deepcopy(BATCH)
@@ -233,7 +241,7 @@ class ApiTests(unittest.TestCase):
         }]
         batch["candidates"][0]["ad"]["source_scheme"] = "about"
         request = build_request(Batch.model_validate(batch))
-        self.assertEqual(set(request["questions"]), {"ad_0", "unsafe_0"})
+        self.assertEqual(set(request["questions"]), {"ad_0", "unsafe_0", "violent_entity_0"})
         self.assertEqual(request["model"], "jev-latest")
         self.assertEqual(set(request["state"]["candidates"]), {"item_A"})
         item = request["state"]["candidates"]["item_A"]
@@ -244,14 +252,41 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(item["ad"]["source_scheme"], "about")
         self.assertIn("policy", request["state"])
         self.assertEqual(request["state"]["policy"], dict(address_context=ADDRESS_CONTEXT,
-                                                         advertising=AD_CRITERIA, unsafe_content=SAFETY_CRITERIA))
-        for question in request["questions"].values():
-            self.assertIn("policy.address_context", question["instructions"])
+                                                         advertising=AD_CRITERIA, unsafe_content=SAFETY_CRITERIA,
+                                                         violent_entities=VIOLENT_ENTITIES))
+        for name in ("ad_0", "unsafe_0"):
+            self.assertIn("policy.address_context", request["questions"][name]["instructions"])
+        self.assertIn("policy.violent_entities.question", request["questions"]["violent_entity_0"]["instructions"])
+        self.assertIn("candidates.item_A", request["questions"]["violent_entity_0"]["instructions"])
         # Every rule remains present, but the fixed policy is transmitted once.
         self.assertEqual(json.dumps(request).count(ADDRESS_CONTEXT), 1)
         for value in (-0.1, 1.1, "0.9", True, float("nan"), float("inf")):
             with self.subTest(value=value), self.assertRaises(ValidationError):
                 Noul.model_validate({"type": "noul", "noul": value})
+
+    def test_pre_entity_receipts_remain_valid(self):
+        # Use an actual advertising judgment, then encode the signed pre-v9
+        # receipt shape. This exercises compatibility, not a substituted model.
+        batch = Batch.model_validate(BATCH)
+        with server() as client:
+            response = client.post("/judge", json=BATCH)
+            self.assertEqual(response.status_code, 200)
+            judgments = Judgments.model_validate(response.json())
+        key = "isolated-receipt-compatibility-test-key"
+        telemetry.prepare_judgments(batch, judgments, key, 10, 0.70, 0.80, "jev-latest")
+        encoded, _ = judgments.results[0].receipt.rsplit(".", 1)
+        legacy = json.loads(base64.urlsafe_b64decode(encoded))
+        legacy["decision"].pop("violent_entity_score")
+        legacy["policy_version"] = "8"
+        payload = json.dumps(legacy).encode()
+        receipt = base64.urlsafe_b64encode(payload).decode() + "." + telemetry._signature(payload, key)
+        removal = telemetry.Removal(document_id=batch.document_id, target_id="1", revision=1,
+                                    removed_text=batch.candidates[0].text, text_truncated=False,
+                                    date=datetime.now(timezone.utc), total_ms=100,
+                                    passages=[telemetry.Passage(receipt=receipt, text=batch.candidates[0].text)])
+        item = telemetry.removal_row(removal, key)["classifications"][0]
+        self.assertIsNone(item["violent_entity_score"], "Old receipts must not invent a safe score")
+        self.assertEqual(item["ad_score"], judgments.results[0].ad_score)
 
     def test_environment_loader_preserves_existing_values(self):
         with NamedTemporaryFile(mode="w", encoding="utf-8") as env_file:
