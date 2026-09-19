@@ -18,9 +18,15 @@ export type Candidate = {
   };
 };
 export type Batch = { document_id: string; page_host: string; page_scheme: string; candidates: Candidate[] };
-export type Decision = { id: string; revision: number; ad_score: number; unsafe_score: number; remove: boolean; reasons: Reason[] };
+export type Decision = { id: string; revision: number; ad_score: number; unsafe_score: number; remove: boolean; reasons: Reason[]; receipt?: string | null };
+export type Removal = {
+  document_id: string; target_id: string; revision: number;
+  removed_text: string; text_truncated: boolean;
+  detected_at: string; removed_at: string; total_ms: number;
+  passages: { receipt: string; text: string }[];
+};
 export type Judgments = { document_id: string; policy_version: string; results: Decision[] };
-export type PageStats = Counts & { checked: number; pending: number; deferred: number; error: string | null };
+export type PageStats = Counts & { checked: number; pending: number; deferred: number; error: string | null; recording_error: string | null };
 
 export function apiBase(value: unknown): string {
   if (typeof value !== "string") throw new Error("Invalid API URL");
@@ -52,6 +58,7 @@ export function judgmentsFrom(value: unknown, batch: Batch): Judgments {
     if (!result || !expected.has(result.id) || expected.get(result.id) !== result.revision ||
         [result.ad_score, result.unsafe_score].some(n => typeof n !== "number" || !Number.isFinite(n) || n < 0 || n > 1) ||
         typeof result.remove !== "boolean" || !Array.isArray(result.reasons) ||
+        (result.receipt != null && (typeof result.receipt !== "string" || !result.receipt.length || result.receipt.length > 4096)) ||
         result.reasons.some(r => !["advertising", "unsafe_content"].includes(r)) ||
         new Set(result.reasons).size !== result.reasons.length || result.remove !== (result.reasons.length > 0)) {
       throw new Error("Invalid judgment response");

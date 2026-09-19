@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 import unittest
+from tempfile import NamedTemporaryFile
 
 import httpx
 from pydantic import ValidationError
@@ -33,7 +34,7 @@ def server(**settings):
         port = reservation.getsockname()[1]
     process = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "denied.app:app", "--host", "127.0.0.1", "--port", str(port), "--no-access-log"],
-        env={**os.environ, "DENIED_MAX_REQUESTS": "4", **settings},
+        env={**os.environ, "DENIED_RECORD_REMOVALS": "0", **settings},
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     try:
@@ -82,7 +83,6 @@ class ApiTests(unittest.TestCase):
                 expected = (["advertising"] if example["ad"] else []) + (["unsafe_content"] if example["unsafe"] else [])
                 self.assertEqual(result["reasons"], expected, example["name"])
                 self.assertEqual(result["remove"], bool(expected))
-            self.assertEqual(client.get("/health").json()["requests_remaining"], 3)
 
     def test_domain_and_scheme_context_do_not_override_content(self):
         # Hypothetical page contexts, actual provider judgments: not a scan of these websites.
@@ -127,12 +127,6 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(results[-1]["reasons"], ["advertising"])
             self.assertTrue(all(not result["remove"] for result in results[:-1]))
 
-    def test_real_request_budget(self):
-        with server(DENIED_MAX_REQUESTS="1") as client:
-            self.assertEqual(client.post("/judge", json=BATCH).status_code, 200)
-            self.assertEqual(client.post("/judge", json=BATCH).status_code, 429)
-            self.assertEqual(client.get("/health").json()["requests_remaining"], 0)
-
     def test_missing_and_rejected_credentials(self):
         with server(TYPESAFE_API_KEY="") as client:
             self.assertFalse(client.get("/health").json()["configured"])
@@ -160,7 +154,6 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(client.post("/judge", content=json.dumps(BATCH), headers={"Content-Type": "text/plain"}).status_code, 415)
             self.assertEqual(client.post("/judge", json=BATCH, headers={"Host": "evil.test"}).status_code, 400)
             self.assertEqual(client.post("/judge", content="x" * 131073, headers={"Content-Type": "application/json"}).status_code, 413)
-            self.assertEqual(client.get("/health").json()["requests_remaining"], 4)
 
     def test_actual_schema_and_request_builder(self):
         batch = copy.deepcopy(BATCH)
@@ -183,6 +176,20 @@ class ApiTests(unittest.TestCase):
         for value in (-0.1, 1.1, "0.9", True, float("nan"), float("inf")):
             with self.subTest(value=value), self.assertRaises(ValidationError):
                 Noul.model_validate({"type": "noul", "noul": value})
+
+    def test_environment_loader_preserves_existing_values(self):
+        with NamedTemporaryFile(mode="w", encoding="utf-8") as env_file:
+            env_file.write("TYPESAFE_API_KEY=from-file\nDENIED_AD_THRESHOLD=0.61\n")
+            env_file.flush()
+            # Run the real loader in an isolated process rather than patching global state.
+            subprocess.run([sys.executable, "-c", """
+import os, sys
+from denied.app import load_environment
+os.environ.pop('DENIED_AD_THRESHOLD', None)
+load_environment(sys.argv[1])
+assert os.environ['TYPESAFE_API_KEY'] == 'from-shell'
+assert os.environ['DENIED_AD_THRESHOLD'] == '0.61'
+""", env_file.name], env={**os.environ, "TYPESAFE_API_KEY": "from-shell"}, check=True)
 
 
 if __name__ == "__main__":

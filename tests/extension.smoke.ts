@@ -65,6 +65,15 @@ async function add(id: string, text: string) {
     document.body.append(p);
   }, { id, text });
 }
+async function addLongTag(id: string, text: string) {
+  await page.evaluate(({ id, text }) => {
+    const element = document.createElement("reddit-custom-element-with-a-long-name");
+    element.id = id;
+    element.className = "sample";
+    element.textContent = text;
+    document.body.append(element);
+  }, { id, text });
+}
 async function rescan() {
   await stats();
   await worker.evaluate(id => chrome.tabs.sendMessage(id!, { type: "rescan" }), pageTab);
@@ -155,6 +164,13 @@ try {
   await page.locator("#shelltext").evaluate((el, text) => { el.textContent = text; }, SCAM);
   await page.waitForSelector("#shell", { state: "detached" });
   pass("a descendant mutation invalidates its already-checked container");
+
+  await addLongTag("longtag", "The school garden has new seedlings.");
+  await checked("longtag");
+  const longTag = forTarget("longtag").find(o => o.result);
+  assert(longTag, "long custom element was not judged");
+  assert(longTag.candidate.ad.tag.length <= 20, "custom element tag exceeded the API bound");
+  pass("custom element names are bounded before request validation");
 
   const beforeBoth = await stats();
   await page.evaluate(text => {
@@ -277,9 +293,8 @@ try {
   await mkdir("artifacts", { recursive: true });
   await Bun.write("artifacts/real-results.json", JSON.stringify({
     timestamp: new Date().toISOString(), provider: "jev-latest", results, publicPages, failed,
-    apiRequests: api.requestsUsed,
     roundTripsMs: [...observations.values()].filter(o => o.elapsed !== undefined).map(o => Math.round(o.elapsed!)),
   }, null, 2));
 }
 if (failed) throw new Error(failed);
-console.log(`${results.length} real browser checks passed; ${api.requestsUsed} provider requests. Results: artifacts/real-results.json`);
+console.log(`${results.length} real browser checks passed. Results: artifacts/real-results.json`);

@@ -66,6 +66,7 @@ class Decision(StrictModel):
     unsafe_score: Probability
     remove: bool
     reasons: list[Reason]
+    receipt: str | None = None
 
 
 class Judgments(StrictModel):

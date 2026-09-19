@@ -1,4 +1,4 @@
-import { DEFAULTS, MAX_BATCH, apiBase, judgmentsFrom, settingsFrom, zeroCounts, type Batch, type Counts, type Settings } from "./contracts";
+import { DEFAULTS, MAX_BATCH, apiBase, judgmentsFrom, settingsFrom, zeroCounts, type Batch, type Counts, type Removal, type Settings } from "./contracts";
 
 type Ledger = { total: Counts; documents: Record<string, Counts> };
 const ready = chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
@@ -10,12 +10,12 @@ async function settings(): Promise<Settings> {
   return settingsFrom({ ...DEFAULTS, ...stored.settings });
 }
 
-async function request(path: "/judge" | "/health", batch?: Batch): Promise<unknown> {
+async function request(path: "/judge" | "/health" | "/outcomes", payload?: Batch | Removal): Promise<unknown> {
   const config = await settings();
   const response = await fetch(`${apiBase(config.apiBase)}${path}`, {
-    method: batch ? "POST" : "GET",
-    headers: batch ? { "Content-Type": "application/json" } : {},
-    body: batch ? JSON.stringify(batch) : undefined,
+    method: payload ? "POST" : "GET",
+    headers: payload ? { "Content-Type": "application/json" } : {},
+    body: payload ? JSON.stringify(payload) : undefined,
     signal: AbortSignal.timeout(10000),
     credentials: "omit", redirect: "error", cache: "no-store",
   });
@@ -64,6 +64,22 @@ async function handle(message: any, sender: chrome.runtime.MessageSender): Promi
       if (!batch || typeof batch.document_id !== "string" || !Array.isArray(batch.candidates) ||
           !batch.candidates.length || batch.candidates.length > MAX_BATCH || JSON.stringify(batch).length > 128000) throw new Error("Invalid batch");
       return judgmentsFrom(await request("/judge", batch), batch);
+    }
+    case "removal": {
+      if (!page) throw new Error("Removal records require a page");
+      const removal = message.removal as Removal;
+      if (!removal || typeof removal.document_id !== "string" || typeof removal.removed_text !== "string" ||
+          removal.removed_text.length > 24000 || !Array.isArray(removal.passages) ||
+          !removal.passages.length || removal.passages.length > MAX_BATCH || JSON.stringify(removal).length > 300000) {
+        throw new Error("Invalid removal record");
+      }
+      // Receipts authenticate the judgment; the shared backend token never enters Chrome.
+      // Retry once: the database's deterministic event ID makes an uncertain first write safe.
+      try { return await request("/outcomes", removal); }
+      catch {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        return request("/outcomes", removal);
+      }
     }
     case "counts":
       if (!page) throw new Error("Counter updates require a page");

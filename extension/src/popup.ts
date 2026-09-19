@@ -24,16 +24,21 @@ async function refresh(): Promise<void> {
     if (!stats) throw new Error("No content script");
     show("page-total", String(stats.total));
     show("breakdown", `${stats.advertising} ads · ${stats.unsafe_content} unsafe`);
+    show("history-status", stats.recording_error || "");
     show("page-status", stats.error ? `Checking unavailable: ${stats.error}` :
       !config.enabled ? "Paused" : `${stats.pending} pending · ${stats.checked} checked · ${stats.deferred} unchecked/deferred`);
-  } catch { show("page-status", "Not available on this page. Reload ordinary web pages after installing."); }
+  } catch {
+    show("page-status", "Not available on this page. Reload ordinary web pages after installing.");
+    show("history-status", "");
+  }
 }
 
 async function check(): Promise<void> {
   show("service-status", "Checking API…");
   try {
     const result = await send({ type: "health" });
-    show("service-status", result.configured ? `API ready · ${result.requests_remaining} requests remaining` : "API connected; set TYPESAFE_API_KEY.");
+    const history = result.recording_error || `removal history ${result.recording_enabled ? "on" : "off"}`;
+    show("service-status", result.configured ? `API ready · ${history}` : "API connected; set TYPESAFE_API_KEY.");
   } catch { show("service-status", "API unavailable. Start the Python backend and check the origin."); }
 }
 

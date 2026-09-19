@@ -6,6 +6,7 @@ from .schemas import Batch, Decision, Judgments, Noul
 
 ENDPOINT = "https://api.typesafe.ai/v1/systemone"
 POLICY_VERSION = "5"
+MODEL_VERSION = "jev-latest"
 ADDRESS_CONTEXT = (
     "Consider the page's domain, link destination domains, their known reputations, and URL schemes alongside the content. "
     "Unencrypted HTTP can increase concern, especially for credential or payment requests. "
@@ -54,7 +55,7 @@ def build_request(batch: Batch) -> dict:
                 "criteria": criteria,
             }
     return {
-        "model": "jev-latest",
+        "model": MODEL_VERSION,
         "state": {"page_host": batch.page_host, "page_scheme": batch.page_scheme, "candidates": candidates},
         "questions": questions,
     }

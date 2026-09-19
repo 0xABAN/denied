@@ -8,7 +8,7 @@ const LABEL = /^(advertisement|sponsored(?: content)?|paid partnership|promoted|
 const HOSTS = ["doubleclick.net", "googlesyndication.com", "googleadservices.com", "taboola.com", "outbrain.com", "amazon-adsystem.com"];
 const AD_SELECTOR = "iframe,ins,[data-ad],[data-ad-slot],[data-ad-unit],[data-sponsored],[data-actirise]";
 const MAX_TEXT = 24000;
-export type Evidence = Omit<Candidate, "id" | "revision"> & { complete: boolean };
+export type Evidence = Omit<Candidate, "id" | "revision"> & { complete: boolean; text_truncated: boolean };
 
 export function visible(el: Element): el is HTMLElement {
   if (!(el instanceof HTMLElement) || !el.isConnected || el.closest(EXCLUDED)) return false;
@@ -123,10 +123,10 @@ export function evidence(el: HTMLElement): Evidence {
   const network = attributes.includes("data-actirise") ? "Actirise" : "";
   return {
     text: fullText.slice(0, MAX_TEXT), links: links.slice(0, 8),
-    ad: { tag: el.tagName.toLowerCase(), tokens: tokens(el).join(" ").slice(0, 160), label: label.slice(0, 100),
+    ad: { tag: el.tagName.toLowerCase().slice(0, 20), tokens: tokens(el).join(" ").slice(0, 160), label: label.slice(0, 100),
       source_host: source.host, source_scheme: source.scheme,
       known_host: [source.host, ...links.map(l => l.destination_host)].some(knownHost), attributes, network },
-    complete: fullText.length <= MAX_TEXT && links.length <= 8,
+    complete: fullText.length <= MAX_TEXT && links.length <= 8, text_truncated: fullText.length > MAX_TEXT,
   };
 }
 

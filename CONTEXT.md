@@ -30,11 +30,11 @@ Image, audio, and video interpretation are out of scope. An identifiable media a
 | Interface | HTML/CSS, native DOM and Web Animations API |
 | Backend | Python, FastAPI, uv |
 | Judgment | TypeSafe Jev, `jev-latest` |
-| Storage | Chrome extension storage for settings and necessary counters |
+| Storage | Chrome storage for settings/counters; optional Tiger Data for actual removal history |
 
 Bun builds browser-compatible JavaScript; it is not a browser runtime. The backend owns the Jev credential and policy. For the current local demo, supply your own key through an ignored backend `.env` and bind FastAPI to loopback. Do not ship the provider key in the extension. Filtering starts paused until the user enables it.
 
-Start without React, Next.js, a database, accounts, or a separate website. Add React only if the settings interface warrants it, and Next.js only for an actual web application.
+Keep one API with optional Tiger storage; do not introduce a second classifier/backend. There are no accounts or separate website. Add React only if the settings interface warrants it, and Next.js only for an actual web application.
 
 ## Architecture
 
@@ -52,6 +52,9 @@ Typed judgments, keyed by candidate ID and revision
        |
 Content script
   reject stale results -> glow -> pop -> delete
+       |
+POST /outcomes with signed judgment receipts
+  verify -> persist actual removal in Tiger Data
 ```
 
 ### Discovery and evidence
@@ -91,6 +94,14 @@ On timeout, malformed response, or provider failure, leave affected content unch
 
 Keep credentials and network access in the backend/service-worker path, not page scripts. Validate message types, sender context, payload sizes, and batch limits. Chrome can suspend the service worker, so persist necessary settings/counters rather than relying on its global variables. Count actual removals once per block; a block matching both filters is one removal with two reasons.
 
+### Actual-removal history
+
+The authoritative `/judge` API optionally signs positive judgments with a backend-only secret. A current, successful DOM deletion sends its bounded visible text, triggering passages/receipts, detection/removal timestamps, and measured total latency to `/outcomes`. Highlights, stale decisions, and merely positive judgments do not create database records. Receipts bind server-owned scores, reasons, thresholds, model/policy versions, page host/protocol, document/candidate/revision, passage digest, and Jev-call duration. They expire after 15 minutes; no shared access token belongs in Chrome.
+
+Store one idempotent record per document/target/revision in Tiger, even when both reasons match. Use the existing native `PG_*` credentials, TLS, and a private `BACKEND_API_TOKEN` for history/metrics reads. Keep database access bounded and separate from inference. A storage outage must not prevent filtering; report the history failure separately. Delivery retries once but is not durable across tab/worker shutdown, so do not claim a complete audit trail.
+
+Store up to 24,000 characters of removed visible text, flag truncation, and retain triggering-passage scores and timings. Do not store raw HTML, unrelated browsing content, input values, or editable drafts. Opaque media ad containers may have empty text. Browser and server timestamps have different clocks; measured durations distinguish server Jev evaluation from detection-to-deletion time including animation. There is no automatic retention policy in this demo.
+
 ## Interface and motion
 
 Preserve this sequence after a removal decision:
@@ -112,7 +123,7 @@ A toolbar badge shows the page's removal count. A brief bottom-right toast summa
 
 Do not collect input values, passwords, editable drafts, or full-page dumps. Do not store raw browsing text or candidate payloads in application logs. Minimize any surrounding context and avoid URLs containing query tokens. Visible text may still contain personal information; do not describe extraction as anonymization.
 
-Disclose that selected content passes through our backend to the inference provider. Begin with controlled test pages rather than children's browsing data. Review consent, provider retention, permissions, and deployment requirements before real child use.
+Disclose that selected content passes through our backend to the inference provider and that configuring Tiger recording additionally retains actual removed text, classifications, page host/protocol, and timing in that database. Begin with controlled test pages rather than children's browsing data. Review consent, provider retention, permissions, and deployment requirements before real child use.
 
 Build locally first and consider hosting later. Keep one configurable API origin and the extension-to-API boundary. The current demo has no accounts or public onboarding. A hosted backend will require authentication, rate limits, request-size limits, timeouts, and a usage budget before exposure, plus a decision about key ownership. CORS and an extension ID are not authentication. Do not expose the loopback API as a public service unchanged.
 
@@ -120,7 +131,7 @@ DOM removal does not cancel requests already made by the page, stop tracking, bl
 
 ## Verification and handoff
 
-Use actual Chromium, the built extension, actual loopback FastAPI processes, and real Jev calls. Do not mock services, intercept/replace responses, or substitute heuristic decisions. Controlled fixtures are test inputs, not simulated model outputs. Assert both what disappears and what stays. Include stale responses, changed links/text/schemes, malformed-score validation, actual API outage/recovery, service-worker restart, and reduced-motion cases. Require a provider key and report unavailable services as failures rather than silently skipping inference.
+Use actual Chromium, the built extension, actual loopback FastAPI processes, and real Jev calls. Do not mock services, intercept/replace responses, or substitute heuristic decisions. Controlled fixtures are test inputs, not simulated model outputs. Assert both what disappears and what stays. Include stale responses, changed links/text/schemes, malformed-score validation, actual API outage/recovery, service-worker restart, and reduced-motion cases. Require a provider key and report unavailable services as failures rather than silently skipping inference. For storage integration, require the real Tiger service, isolate test writes in a unique disposable schema, check persisted content and idempotency through the actual API, and clean up only that schema. Verify that receipt tampering is rejected, highlights/stale results create no records, and database connection failure leaves filtering working.
 
 Measure false removals, missed labeled targets, discovery coverage, time to judgment, and time to final removal separately. Include benign educational content in policy evaluation. Test extension permissions and messaging in Chrome, not only a simulated page harness.
 

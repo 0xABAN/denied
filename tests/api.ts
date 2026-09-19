@@ -10,33 +10,25 @@ export async function until(check: () => Promise<boolean> | boolean, label: stri
 }
 
 /** Start the actual application with the user's key. Never substitute an inference service. */
-export async function localAPI(budget = 60) {
+export async function localAPI(extraEnv: Record<string, string> = {}) {
   const reservation = createServer();
   await new Promise<void>(done => reservation.listen(0, "127.0.0.1", done));
   const port = (reservation.address() as { port: number }).port;
   await new Promise<void>((done, fail) => reservation.close(error => error ? fail(error) : done()));
   const url = `http://127.0.0.1:${port}`;
   let process: ReturnType<typeof Bun.spawn> | undefined;
-  let used = 0;
-  let allowance = budget;
 
   async function stop() {
     if (!process) return;
-    try {
-      const health = await fetch(`${url}/health`, { signal: AbortSignal.timeout(1000) }).then(r => r.json());
-      used += allowance - health.requests_remaining;
-    } catch { /* The child may already have exited. */ }
     process.kill("SIGTERM");
     await process.exited;
     process = undefined;
   }
 
-  async function start() {
-    if (used >= budget) throw new Error(`Real-provider request budget (${budget}) exhausted`);
-    allowance = budget - used;
+  async function start(overrides: Record<string, string> = {}) {
     const envFile = await Bun.file("backend/.env").exists() ? ["--env-file", ".env"] : [];
     process = Bun.spawn(["uv", "run", ...envFile, "uvicorn", "denied.app:app", "--host", "127.0.0.1", "--port", String(port), "--no-access-log"], {
-      cwd: resolve("backend"), env: { ...Bun.env, DENIED_MAX_REQUESTS: String(allowance) }, stdout: "ignore", stderr: "ignore",
+      cwd: resolve("backend"), env: { ...Bun.env, DENIED_RECORD_REMOVALS: "0", ...extraEnv, ...overrides }, stdout: "ignore", stderr: "ignore",
     });
     try {
       await until(async () => {
@@ -54,5 +46,5 @@ export async function localAPI(budget = 60) {
   }
 
   await start();
-  return { url, start, stop, get requestsUsed() { return used; } };
+  return { url, start, stop };
 }

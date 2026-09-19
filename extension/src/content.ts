@@ -1,10 +1,11 @@
-import { DEFAULTS, MAX_BATCH, OWN, judgmentsFrom, zeroCounts, type Batch, type Candidate, type Decision, type PageStats, type Settings } from "./contracts";
+import { DEFAULTS, MAX_BATCH, OWN, judgmentsFrom, zeroCounts, type Batch, type Candidate, type Decision, type PageStats, type Removal, type Settings } from "./contracts";
 import { discover, evidence, passages, visible, type Evidence } from "./scan";
 import { clearHighlights, highlight, notify, removeElement } from "./effects";
 
 type Target = {
   id: string; revision: number; fingerprint: string; value: Evidence; parts: string[];
-  next: number; results: Decision[]; attempts: number; retryAt: number;
+  next: number; results: (Decision & { text: string })[]; attempts: number; retryAt: number;
+  detectedAt: string; detectedTick: number;
   state: "pending" | "checking" | "checked" | "animating" | "failed";
 };
 const documentId = Array.from(crypto.getRandomValues(new Uint32Array(4))).join("-");
@@ -18,6 +19,7 @@ let sequence = 0;
 let busy = false;
 let timer: ReturnType<typeof setTimeout> | undefined;
 let lastError: string | null = null;
+let recordingError: string | null = null;
 let policyVersion = "";
 let overflow = 0;
 let skipped = new WeakSet<HTMLElement>();
@@ -26,7 +28,8 @@ function stats(): PageStats {
   const values = [...records.values()];
   return { ...counts, checked: values.filter(t => t.state === "checked" && t.value.complete).length,
     pending: values.filter(t => ["pending", "checking", "animating"].includes(t.state)).length,
-    deferred: overflow + values.filter(t => !t.value.complete || t.state === "failed").length, error: lastError };
+    deferred: overflow + values.filter(t => !t.value.complete || t.state === "failed").length,
+    error: lastError, recording_error: recordingError };
 }
 
 function schedule(delay = 600): void {
@@ -42,6 +45,7 @@ function reset(): void {
   overflow = 0;
   skipped = new WeakSet();
   lastError = null;
+  recordingError = null;
   pageUrl = location.href;
   if (document.body && settings.enabled) roots.add(document.body);
   schedule();
@@ -75,7 +79,8 @@ function collect(): void {
     const fingerprint = JSON.stringify(value);
     if (previous?.fingerprint === fingerprint) continue;
     records.set(el, { id: previous?.id || String(++sequence), revision: (previous?.revision || 0) + 1,
-      fingerprint, value, parts: passages(value.text), next: 0, results: [], attempts: 0, retryAt: 0, state: "pending" });
+      fingerprint, value, parts: passages(value.text), next: 0, results: [], attempts: 0, retryAt: 0, state: "pending",
+      detectedAt: new Date().toISOString(), detectedTick: performance.now() });
   }
 }
 
@@ -99,6 +104,20 @@ async function apply(el: HTMLElement, target: Target, epoch: number, url: string
   target.state = "animating";
   const removed = await removeElement(el, settings, () => settings.mode === "remove" && current(el, target, epoch, url));
   if (removed) {
+    // Only an actual, freshness-checked removal is eligible for persistent history.
+    const signed = hits.filter(hit => hit.receipt);
+    if (signed.length) {
+      const removal: Removal = {
+        document_id: documentId, target_id: target.id, revision: target.revision,
+        removed_text: target.value.text, text_truncated: target.value.text_truncated,
+        detected_at: target.detectedAt, removed_at: new Date().toISOString(),
+        total_ms: Math.round(performance.now() - target.detectedTick),
+        passages: signed.map(hit => ({ receipt: hit.receipt!, text: hit.text })),
+      };
+      void chrome.runtime.sendMessage({ type: "removal", removal }).then(response => {
+        if (response?.error && generation === epoch) recordingError = "Removal history unavailable; filtering remains active";
+      }).catch(() => { if (generation === epoch) recordingError = "Removal history unavailable; filtering remains active"; });
+    }
     counts.total++;
     for (const reason of result.reasons) counts[reason]++;
     void chrome.runtime.sendMessage({ type: "counts", counts: { ...counts } }).catch(() => {});
@@ -153,7 +172,7 @@ async function flush(): Promise<void> {
         if (item.el.isConnected && settings.enabled) roots.add(item.el);
         continue;
       }
-      item.target.results.push(results.get(item.candidate.id)!);
+      item.target.results.push({ ...results.get(item.candidate.id)!, text: item.candidate.text });
       targets.set(item.el, item.target);
     }
     for (const [el, target] of targets) void apply(el, target, epoch, url);
