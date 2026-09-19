@@ -45,7 +45,7 @@ const site = Bun.serve({ hostname: "127.0.0.1", port: 0, tls: { key: Bun.file(ke
   localRequests++;
   let html = fixture.site === "youtube" && url.pathname === "/watch" ? watch : fixturePage(fixture);
   // The tiny badge, not a sales pitch in the body, must identify the whole X post.
-  if (fixture.site === "x") html = html.replace("Tickets for sale. Send me a message to buy them for $40.", "Explore the new collection.");
+  if (fixture.site === "x") html = html.replace("Tickets for sale. Send me a message to buy them for $40.", "The school garden has flowers and butterflies.");
   return new Response(html, { headers: { "Content-Type": "text/html" } });
 } });
 const mappings = [...new Set(adapterFixtures.map(fixture => new URL(fixture.url).hostname))]

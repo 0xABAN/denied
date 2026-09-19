@@ -48,6 +48,16 @@ Native video/audio playback is paused before a current removal starts, including
 
 The extension does not download or analyze media, follow links, or use a new model/provider. Benign or misleading metadata can conceal unsafe videos. This remains reactive removal, not prevention of initial exposure.
 
+## Whole-item site adapters
+
+Adapters for 26 web apps—including YouTube, Amazon, X, GroupMe, Gmail and Outlook—associate evidence with a complete item before classification. A post's sponsorship badge can remove the post, not just the badge. A video title can remove its card or the associated watch-page regions. Opened emails are individual targets; inbox rows representing whole conversations are not expanded into thread removals.
+
+The existing Jev policy and thresholds are unchanged. Ordinary sales offers remain advertising under that policy, so commerce sites can lose many product listings. No site-specific keyword rules decide what gets blocked.
+
+Independent replies, reviews, recommendations, drafts and shared author identity are excluded from the parent's scope. Site IDs, raw link identity and membership fingerprints stay local. Whole-root items retain the existing animation; disjoint regions and shared wrappers use a synchronous guarded removal without animation. Shared header shells may remain rather than risk deleting surviving content. These are local display changes, never server-side message/email deletion, archive actions or purchases.
+
+**Coverage is layout-specific, not universal support for 26 websites.** All 26 have controlled browser/real-Jev integration checks, but many signed-in layouts and detail-page variants remain unverified. Unknown structures retain conservative filtering. See [the adapter coverage matrix](docs/adapters.md) for implemented units, source provenance, live observations and limitations. Visible chats/emails use the existing backend/provider and optional history pipeline; drafts and input values remain excluded.
+
 ## Optional Tiger Data judgment and removal history
 
 Keep using the same `denied.app:app` API. Set Tiger's `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, and `PGSSLMODE=require` in `backend/.env`. No separate database URL is needed. URL-only configurations can use `TIGER_DATABASE_URL` or `TIMESCALE_SERVICE_URL`; populated native `PG_*` settings take precedence.
@@ -93,6 +103,10 @@ bun run test:api
 bun run test:extension
 # Video metadata association/playback checks plus actual extension/FastAPI/Jev filtering:
 bun run test:video
+# 26 structural fixtures, preservation guards, and real extension/FastAPI/Jev integration:
+bun run test:adapters
+# Read-only public-layout observations; reports blocked/unverified sites explicitly:
+bun run observe:adapters
 # Focused real-provider extension check: removals, glass glint, shards, counters:
 bun run test:extension --motion-only
 # 600-block waves (20 blocks/request) and live shadow-root mutation coverage:
@@ -142,7 +156,8 @@ For the all-judgments/single-date change, typecheck/build, all seven real API te
 
 ## Architecture
 
-- `extension/src/scan.ts` and `extension/src/grouping.ts`: candidate boundaries, media-card association, and text/metadata evidence extraction.
+- `extension/src/adapters/`: 26 site-specific ownership definitions, protected boundaries and guarded multi-region removal.
+- `extension/src/scan.ts` and `extension/src/grouping.ts`: adapter-first discovery, generic boundaries, media-card association, and text/metadata evidence extraction.
 - `extension/src/content.ts`: bounded queue, revisions, retries, and stale-result rejection.
 - `extension/src/effects.ts`: notices, diagnostic labels, and the removal entry point.
 - `extension/src/motion/`: guarded accelerating spin with wobble and glass glint, layout collapse, and bounded monochrome shard rendering.
