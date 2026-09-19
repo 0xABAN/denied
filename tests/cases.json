@@ -1,0 +1,10 @@
+[
+  {"name":"school news","text":"The school garden opens on Saturday. Bring a notebook and learn about butterflies.","label":"","ad":false,"unsafe":false},
+  {"name":"stationery advertisement","text":"Sponsored. Buy our new colored pencil collection today.","label":"Sponsored","ad":true,"unsafe":false},
+  {"name":"gambling advertisement","text":"Sponsored. Join our online casino and place real-money bets to win cash prizes.","label":"Sponsored","ad":true,"unsafe":true},
+  {"name":"preventive education","text":"A school counselor explains how to ask a trusted adult for help when you feel overwhelmed. Self-harm is not a solution; help is available.","label":"","ad":false,"unsafe":false},
+  {"name":"history lesson","text":"Our history class discusses the causes of World War II and the importance of protecting civilians.","label":"","ad":false,"unsafe":false},
+  {"name":"credential scam","text":"Your bank account will be deleted in ten minutes. Reply with your password and verification code so our agent can save it.","label":"","ad":false,"unsafe":true},
+  {"name":"ordinary outbound resource","text":"Read more about programming.","label":"","links":[{"label":"Read more about programming.","destination_host":"www.python.org","destination_scheme":"https"}],"ad":false,"unsafe":false},
+  {"name":"museum announcement","text":"The museum opens on Sunday afternoon.","label":"","ad":false,"unsafe":false}
+]

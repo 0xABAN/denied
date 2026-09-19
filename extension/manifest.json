@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "denied.",
+  "version": "0.1.0",
+  "description": "A local-first demo that removes advertisements and unsafe text for under-13 browsing.",
+  "permissions": ["storage"],
+  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "content_scripts": [{
+    "matches": ["http://*/*", "https://*/*"],
+    "js": ["content.js"],
+    "run_at": "document_idle",
+    "all_frames": false
+  }],
+  "action": { "default_popup": "popup.html", "default_title": "denied." }
+}

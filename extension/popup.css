@@ -1,0 +1,21 @@
+:root { color-scheme: light dark; font: 13px/1.4 system-ui, sans-serif; accent-color: #e11d48; }
+body { width: 300px; margin: 0; padding: 14px; background: Canvas; color: CanvasText; }
+header, .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+h1 { margin: 0; font-size: 22px; letter-spacing: -.8px; }
+.toggle { display: flex; align-items: center; gap: 5px; }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+.stats div { padding: 10px; text-align: center; border-radius: 8px; background: color-mix(in srgb, CanvasText 7%, transparent); }
+.stats strong { display: block; font-size: 24px; color: #e11d48; }
+.stats span, .hint, footer { font-size: 11px; opacity: .75; }
+p { margin: 8px 0; }
+.options { display: grid; gap: 8px; margin: 14px 0; }
+.options label { display: flex; gap: 6px; align-items: center; }
+button, select, input[type=url] { box-sizing: border-box; font: inherit; padding: 7px 9px; border: 1px solid color-mix(in srgb, CanvasText 25%, transparent); border-radius: 6px; background: Field; color: FieldText; }
+button { cursor: pointer; }
+button:hover { background: color-mix(in srgb, CanvasText 10%, Canvas); }
+:focus-visible { outline: 2px solid #e11d48; outline-offset: 2px; }
+details { border-top: 1px solid color-mix(in srgb, CanvasText 18%, transparent); padding-top: 10px; }
+summary { cursor: pointer; margin-bottom: 8px; }
+input[type=url] { width: 100%; margin: 5px 0 8px; }
+#error { color: #e11d48; }
+footer { margin-top: 12px; }

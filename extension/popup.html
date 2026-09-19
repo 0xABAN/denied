@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>denied.</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header><h1>denied.</h1><label class="toggle"><input id="enabled" type="checkbox"> Enabled</label></header>
+  <section class="stats" aria-label="Removal counts">
+    <div><strong id="page-total">0</strong><span>on this page</span></div>
+    <div><strong id="all-total">0</strong><span>total removed</span></div>
+  </section>
+  <p id="breakdown">0 ads · 0 unsafe</p>
+  <p class="hint">A block can match both filters and is removed once.</p>
+  <p id="page-status" role="status">Loading page status…</p>
+  <section class="options">
+    <label><input id="animate" type="checkbox"> Glow and pop animation</label>
+    <label><input id="toast" type="checkbox"> Removal notices</label>
+    <label for="mode">Mode</label>
+    <select id="mode"><option value="remove">Remove flagged content</option><option value="highlight">Highlight only (diagnostic)</option></select>
+    <button id="rescan" type="button">Rescan page</button>
+  </section>
+  <details>
+    <summary>Local API</summary>
+    <label for="apiBase">API origin</label>
+    <input id="apiBase" type="url" spellcheck="false" autocomplete="off">
+    <div class="row"><button id="save" type="button">Save</button><button id="check" type="button">Check connection</button></div>
+    <p class="hint">Set TYPESAFE_API_KEY in the Python backend, not here.</p>
+  </details>
+  <p id="service-status" role="status">Checking local API…</p>
+  <p id="error" role="alert"></p>
+  <footer>When enabled, selected page text and link hosts are sent through your API to Jev. Text/link filtering only. Content stays visible until removal.</footer>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

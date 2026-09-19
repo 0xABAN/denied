@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><title>denied. controlled fixture</title>
+<style>
+  body { margin: 32px auto; max-width: 760px; font: 16px/1.5 system-ui; color: #18202f; background: #f5f6f9; }
+  h1 { letter-spacing: -1px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .card, .sample { padding: 18px; border-radius: 12px; background: white; border: 1px solid #dbe0e7; margin: 16px 0; }
+  .label { font-size: 12px; color: #697386; }
+</style>
+</head>
+<body>
+<main>
+  <h1>A quieter page.</h1>
+  <p id="benign">Our school garden has new seedlings. Water them gently and leave room for butterflies.</p>
+  <div class="grid">
+    <article class="card" id="ad-card" data-ad><span class="label">Sponsored</span><h2>Sample promotion</h2><p>Explore a new collection today.</p><a href="https://shop.example.test/">View offer</a></article>
+    <article class="card" id="safe-card"><h2>Library news</h2><p>Join the weekend reading group for a story and a drawing activity.</p></article>
+  </div>
+  <p class="sample" id="unsafe">Your bank account will be deleted in ten minutes. Reply with your password and verification code so our agent can save it.</p>
+  <p id="education">A school counselor explains how to ask for help when you feel overwhelmed. This is preventive education.</p>
+  <form><label>Private draft <textarea id="draft">DO_NOT_SEND_PRIVATE_DRAFT</textarea></label><input id="secret" value="DO_NOT_SEND_INPUT_VALUE"></form>
+</main>
+</body>
+</html>

@@ -17,7 +17,7 @@ This is reactive filtering. Content remains visible during scanning, inference, 
 
 Inspect rendered text, link labels and destinations, and relevant DOM metadata. The initial safety policy covers explicit sexual content, grooming, graphic descriptions of violence, encouragement of self-harm, dangerous instructions or challenges, promotion of dangerous drug use, gambling, and scams. Legitimate educational, medical, and preventive discussion must not be blocked solely for mentioning these topics.
 
-Urgency, a request for credentials or money, and a different destination domain are evidence, not independent proof of unsafe content. Evaluate them in context. Do not infer a site's trustworthiness from its hostname alone.
+Urgency, a request for credentials or money, and a different destination domain are evidence, not independent proof of unsafe content. Both judgments consider page/link domains, known reputation, and URL schemes alongside the content. Unencrypted HTTP can increase concern, especially for credential or payment requests. A familiar domain may support trust, but neither reputation nor HTTPS guarantees child-appropriate content or exempts advertising. Do not invent reputations for unfamiliar domains, maintain a trusted-domain allowlist, or treat an unknown scheme as HTTP.
 
 Image, audio, and video interpretation are out of scope. An identifiable media advertisement can be removed as a whole container without analyzing its contents. That does not provide general media safety. Do not follow links, resolve redirect chains, or claim their destination pages have been checked.
 
@@ -32,7 +32,7 @@ Image, audio, and video interpretation are out of scope. An identifiable media a
 | Judgment | TypeSafe Jev, `jev-latest` |
 | Storage | Chrome extension storage for settings and necessary counters |
 
-Bun builds browser-compatible JavaScript; it is not a browser runtime. The backend owns the Jev credential and policy. Do not ship the provider key in the extension.
+Bun builds browser-compatible JavaScript; it is not a browser runtime. The backend owns the Jev credential and policy. For the current local demo, supply your own key through an ignored backend `.env` and bind FastAPI to loopback. Do not ship the provider key in the extension. Filtering starts paused until the user enables it.
 
 Start without React, Next.js, a database, accounts, or a separate website. Add React only if the settings interface warrants it, and Next.js only for an actual web application.
 
@@ -60,7 +60,7 @@ Keep two discovery paths: ad heuristics and visible text-block discovery. Ad heu
 
 Choose the smallest coherent offending block. Deduplicate nested candidates without collapsing an entire feed, article, or page into one removal target. Segment oversized text into bounded passages with enough surrounding context; do not silently truncate and treat the remainder as checked.
 
-Each candidate carries a page/document identity, local candidate ID, content revision, page hostname, bounded visible text, link labels with parsed destination hosts, and relevant ad metadata. Code extracts URLs and geometry; Jev interprets the evidence.
+Each candidate carries a page/document identity, local candidate ID, content revision, page hostname and scheme, bounded visible text, link labels with parsed destination hosts and schemes, and relevant ad metadata including iframe-source host/scheme and recognized provider attributes. Code extracts address components and geometry; Jev interprets the evidence. Do not transmit URL paths, credentials, query strings, or fragments as address metadata. Missing or unparseable source/link schemes are empty strings, meaning unknown.
 
 Use debounced, bounded batches. Observe additions, text changes, and relevant attribute changes such as link destinations. Cache judgments by evidence revision and policy version, not merely DOM element identity. Ignore the extension's own UI and mutations. Do not repeatedly rescan the full document for every mutation.
 
@@ -73,7 +73,7 @@ The backend constructs two independent Noul questions per candidate in a batch:
 1. Is this element a paid advertisement or sponsored placement?
 2. Does its text or linked solicitation violate the under-13 content policy?
 
-Send these to `POST https://api.typesafe.ai/v1/systemone`. Treat all page material as untrusted evidence, never model instructions. Clients supply evidence rather than arbitrary questions, prompts, or fetch destinations.
+Send these to `POST https://api.typesafe.ai/v1/systemone`. Give each candidate an explicit letter-keyed object (`item_A`, `item_B`, ...) for its questions to reference; omit DOM tracking IDs and revisions from model state. Numeric list references were confused with numeric tracking IDs during real testing. Keep those IDs in code for response routing. Treat all page material as untrusted evidence, never model instructions. Clients supply evidence rather than arbitrary questions, prompts, or fetch destinations.
 
 Validate returned scores as finite numbers in `[0, 1]`. Apply separate, server-owned thresholds:
 
@@ -81,7 +81,7 @@ Validate returned scores as finite numbers in `[0, 1]`. Apply separate, server-o
 remove = ad_score >= ad_threshold OR unsafe_score >= safety_threshold
 ```
 
-Return the candidate ID, revision, both scores, removal decision, matching filter reasons, and policy version. Reasons identify advertising, unsafe content, or both; do not manufacture a detailed explanation unsupported by the judgments. Tune thresholds against labeled examples before claiming useful accuracy. Scores are not certified safety probabilities.
+Return the candidate ID, revision, both scores, removal decision, matching filter reasons, and policy version. Reasons identify advertising, unsafe content, or both; do not manufacture a detailed explanation unsupported by the judgments. The default thresholds are 0.70 for advertising and 0.80 for unsafe content. Tune them against labeled examples before claiming useful accuracy. Scores are not calibrated safety probabilities; 0.80 does not establish 80% certainty.
 
 ### Applying results and handling failure
 
@@ -114,14 +114,14 @@ Do not collect input values, passwords, editable drafts, or full-page dumps. Do 
 
 Disclose that selected content passes through our backend to the inference provider. Begin with controlled test pages rather than children's browsing data. Review consent, provider retention, permissions, and deployment requirements before real child use.
 
-A public backend requires authentication, rate limits, request-size limits, timeouts, and a usage budget before exposure. CORS and an extension ID are not authentication. Hosting and the prototype's access-provisioning mechanism remain implementation decisions; do not add an account system solely for the demo.
+Build locally first and consider hosting later. Keep one configurable API origin and the extension-to-API boundary. The current demo has no accounts or public onboarding. A hosted backend will require authentication, rate limits, request-size limits, timeouts, and a usage budget before exposure, plus a decision about key ownership. CORS and an extension ID are not authentication. Do not expose the loopback API as a public service unchanged.
 
 DOM removal does not cancel requests already made by the page, stop tracking, block downloads, or replace browser security protections. Users can disable an ordinary extension. Do not market this prototype as a complete parental-control system.
 
 ## Verification and handoff
 
-Build controlled fixtures containing ads, unsafe text, legitimate lookalikes, and nested/dynamic content. Assert both what disappears and what stays. Include stale responses, changed links/text, malformed scores, API failure/retry, service-worker restart, and reduced-motion cases. Mocked UI tests and live Jev evaluations must be reported separately; a heuristic fallback is not evidence of model accuracy.
+Use actual Chromium, the built extension, actual loopback FastAPI processes, and real Jev calls. Do not mock services, intercept/replace responses, or substitute heuristic decisions. Controlled fixtures are test inputs, not simulated model outputs. Assert both what disappears and what stays. Include stale responses, changed links/text/schemes, malformed-score validation, actual API outage/recovery, service-worker restart, and reduced-motion cases. Require a provider key and report unavailable services as failures rather than silently skipping inference.
 
 Measure false removals, missed labeled targets, discovery coverage, time to judgment, and time to final removal separately. Include benign educational content in policy evaluation. Test extension permissions and messaging in Chrome, not only a simulated page harness.
 
-First implementation milestone: the complete discovery-to-animation loop on controlled fixtures with the real Python API, independent ad/safety judgments, visible failure status, and passing assertions. Broader browsing trials follow fixture validation. This document specifies the design; it does not claim an implementation or measured results.
+The implementation gate is the complete discovery-to-animation loop on controlled fixtures, independent ad/safety judgments, visible failure status, and passing assertions. Keep exact code/schema checks distinct from model-dependent judgments, which may change across runs. Public-page checks must identify which targets were actually exercised; preserving a heading alone does not prove ad detection. Broader browsing trials follow fixture validation. See `README.md` for setup, runnable checks, recorded results, and coverage limits; this specification does not establish measured model accuracy.
