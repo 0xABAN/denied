@@ -30,11 +30,11 @@ Image, audio, and video interpretation are out of scope. An identifiable media a
 | Interface | HTML/CSS, native DOM and Web Animations API |
 | Backend | Python, FastAPI, uv |
 | Judgment | TypeSafe Jev, `jev-latest` |
-| Storage | Chrome extension storage for settings and necessary counters |
+| Storage | Tiger Cloud managed PostgreSQL for privacy-safe decision telemetry; Chrome extension storage for settings and necessary counters |
 
 Bun builds browser-compatible JavaScript; it is not a browser runtime. The backend owns the Jev credential and policy. Do not ship the provider key in the extension.
 
-Start without React, Next.js, a database, accounts, or a separate website. Add React only if the settings interface warrants it, and Next.js only for an actual web application.
+Start without React, Next.js, accounts, or a separate website. Tiger Cloud is the single server-side database for timestamped, privacy-safe decision telemetry; do not add another database. Add React only if the settings interface warrants it, and Next.js only for an actual web application.
 
 ## Architecture
 
