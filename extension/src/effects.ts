@@ -1,5 +1,7 @@
 import { OWN, type Decision, type Settings } from "./contracts";
 import { removeWithMotion } from "./motion/removal";
+import { ownership, scopeTree, type ItemScope } from "./adapters";
+import { removalGuard } from "./adapters/removal";
 
 const ROSE = "#e11d48";
 const highlights = new Map<HTMLElement, () => void>();
@@ -12,6 +14,13 @@ export function clearHighlights(): void {
 }
 
 export function highlight(el: HTMLElement, result: Decision): void {
+  const scope = ownership(el);
+  for (const node of scope?.nodes || [el]) {
+    if (node instanceof HTMLElement) highlightRegion(node, result);
+  }
+}
+
+function highlightRegion(el: HTMLElement, result: Decision): void {
   if (highlights.has(el)) return;
   const outline = el.style.outline;
   const tag = document.createElement("small");
@@ -34,11 +43,42 @@ function pauseMedia(root: Element | ShadowRoot): void {
   }
 }
 
-/** Resolve true only when this effect removed the still-current target. */
-export function removeElement(el: HTMLElement, settings: Settings, current: () => boolean): Promise<boolean> {
+/** Resolve true only when the complete, still-current logical item was removed. */
+export function removeElement(el: HTMLElement, settings: Settings, current: () => boolean,
+                              applicable: () => boolean = current): Promise<boolean> {
+  const scope = ownership(el);
+  if (scope) return removeScope(scope, settings, current, applicable);
   if (!current()) return Promise.resolve(false);
   pauseMedia(el);
   return removeWithMotion(el, settings, current);
+}
+
+/** Delete only the approved regions, never their common ancestor. Disjoint
+ * regions use a synchronous guarded commit so deleting one does not invalidate
+ * sibling animations or briefly animate preserved replies/history.
+ * ponytail: multi-region items skip animation; coordinated motion can be added separately.
+ */
+export async function removeScope(scope: ItemScope, settings: Settings, current: () => boolean,
+                                  applicable: () => boolean = current): Promise<boolean> {
+  if (!current()) return false;
+  if (scope.nodes.length === 1 && scope.nodes[0] instanceof HTMLElement) {
+    pauseMedia(scope.nodes[0]);
+    return removeWithMotion(scope.nodes[0], settings, current);
+  }
+
+  const intact = removalGuard(scope);
+  const removed = new Set<Node>();
+  for (const node of scope.nodes) if (node instanceof Element) pauseMedia(node);
+  for (const node of scope.nodes) {
+    // A custom element's disconnectedCallback may synchronously change the next
+    // region, create a reply, navigate, or disable filtering. Stop rather than
+    // widening the old decision to newly introduced content.
+    if (!applicable() || !intact(removed)) return false;
+    const subtree = scopeTree([node]);
+    node.remove();
+    subtree.forEach(child => removed.add(child));
+  }
+  return true;
 }
 
 export function notify(message: string): void {

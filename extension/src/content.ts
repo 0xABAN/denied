@@ -1,5 +1,6 @@
 import { DEFAULTS, OWN, judgmentsFrom, zeroCounts, type Batch, type Candidate, type Decision, type PageStats, type Removal, type Settings } from "./contracts";
-import { discover, evidence, renderedParent, visible, type Evidence } from "./scan";
+import { discover, evidence, owns, renderedParent, visibleItem, type Evidence } from "./scan";
+import { ownershipAttributes } from "./adapters";
 import { clearHighlights, highlight, notify, removeElement } from "./effects";
 import { INFERENCE_BATCH_SIZE, INFERENCE_DELAY_MS, inferenceDelay, requestBatches } from "./scheduling";
 
@@ -29,7 +30,8 @@ let lastInferenceStarted: number | null = null;
 const mutationOptions: MutationObserverInit = {
   subtree: true, childList: true, characterData: true, attributes: true,
   attributeFilter: ["href", "src", "srcset", "poster", "data", "type", "title", "alt", "aria-description", "itemprop",
-    "class", "id", "style", "hidden", "aria-label", "slot", "data-ad", "data-ad-slot", "data-sponsored", "data-actirise"],
+    "class", "id", "style", "hidden", "aria-label", "slot", "data-ad", "data-ad-slot", "data-sponsored", "data-actirise",
+    ...ownershipAttributes()],
 };
 
 function stats(): PageStats {
@@ -72,9 +74,16 @@ function collect(): void {
   roots.clear();
   const sorted = [...found].sort((a, b) => Math.abs(a.getBoundingClientRect().top) - Math.abs(b.getBoundingClientRect().top));
   for (const el of sorted) {
-    // A coherent ad card supersedes an earlier paragraph target from a partial mutation scan.
-    if ([...records.keys()].some(parent => parent !== el && parent.contains(el))) continue;
-    for (const child of records.keys()) if (child !== el && el.contains(child)) records.delete(child);
+    // Only an item's owned regions supersede fragments. Replies can be physical
+    // descendants without belonging to the parent post's classification/removal.
+    let covered = false;
+    for (const [parent, target] of records) {
+      if (parent === el || !owns(parent, el)) continue;
+      if (JSON.stringify(evidence(parent)) === target.fingerprint) covered = true;
+      else records.delete(parent);
+    }
+    if (covered) continue;
+    for (const child of records.keys()) if (child !== el && owns(el, child)) records.delete(child);
     const previous = records.get(el);
     // Retain enough targets to fill a wave; recycle checked offscreen targets.
     if (!previous && records.size >= INFERENCE_BATCH_SIZE * 2) {
@@ -98,9 +107,12 @@ function collect(): void {
   }
 }
 
+function applicable(el: HTMLElement, target: Target, epoch: number, url: string): boolean {
+  return settings.enabled && generation === epoch && location.href === url && el.isConnected && records.get(el) === target;
+}
+
 function current(el: HTMLElement, target: Target, epoch: number, url: string): boolean {
-  return settings.enabled && generation === epoch && location.href === url && el.isConnected &&
-    records.get(el) === target && JSON.stringify(evidence(el)) === target.fingerprint;
+  return applicable(el, target, epoch, url) && JSON.stringify(evidence(el)) === target.fingerprint;
 }
 
 async function apply(el: HTMLElement, target: Target, epoch: number, url: string): Promise<void> {
@@ -116,7 +128,9 @@ async function apply(el: HTMLElement, target: Target, epoch: number, url: string
     return;
   }
   target.state = "animating";
-  const removed = await removeElement(el, settings, () => settings.mode === "remove" && current(el, target, epoch, url));
+  const removed = await removeElement(el, settings,
+    () => settings.mode === "remove" && current(el, target, epoch, url),
+    () => settings.mode === "remove" && applicable(el, target, epoch, url));
   if (removed) {
     // Only an actual, freshness-checked removal is eligible for persistent history.
     const signed = hits.filter(hit => hit.receipt);
@@ -187,7 +201,7 @@ async function flush(): Promise<void> {
   const url = location.href;
   const selected: Selected[] = [];
   for (const [el, target] of records) {
-    if (target.state !== "pending" || target.retryAt > Date.now() || !visible(el)) continue;
+    if (target.state !== "pending" || target.retryAt > Date.now() || !visibleItem(el)) continue;
     while (target.next < target.parts.length && selected.length < INFERENCE_BATCH_SIZE) {
       const index = target.next++;
       selected.push({ el, target, index, candidate: { id: `${target.id}:${index}`, revision: target.revision,
@@ -250,7 +264,7 @@ const observer = new MutationObserver(mutations => {
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (sender.id !== chrome.runtime.id) return;
   if (message?.type === "pageStats") respond({ ...stats(), ...(message.debug ? {
-    debug: { busy: activeWaves > 0, activeWaves, roots: roots.size, targets: [...records].filter(([, t]) => ["pending", "checking"].includes(t.state)).map(([el, t]) => ({ id: t.id, state: t.state, visible: visible(el), next: t.next, parts: t.parts.length, results: t.results.length })) },
+    debug: { busy: activeWaves > 0, activeWaves, roots: roots.size, targets: [...records].filter(([, t]) => ["pending", "checking"].includes(t.state)).map(([el, t]) => ({ id: t.id, state: t.state, visible: visibleItem(el), next: t.next, parts: t.parts.length, results: t.results.length })) },
   } : {}) });
   if (message?.type === "rescan") { reset(); respond({ ok: true }); }
   if (message?.type === "settingsChanged") { settings = message.settings; reset(); respond({ ok: true }); }

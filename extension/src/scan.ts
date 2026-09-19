@@ -1,5 +1,8 @@
 import { OWN, type Candidate } from "./contracts";
 import { COLLECTION, itemBoundaries } from "./grouping";
+import { adapterFor, containsRendered, ownership, ownershipFingerprint, ownershipResolver,
+  protectedByAdapter, renderedParent, type ItemScope, type SiteAdapter } from "./adapters";
+export { renderedParent } from "./adapters";
 
 const EXCLUDED = `script,style,noscript,template,head,svg,input,textarea,select,[contenteditable]:not([contenteditable=false]),[role=textbox],[hidden],[${OWN}]`;
 const PAGE = "html,body,main,nav,header,footer,form,ul,ol,table";
@@ -12,6 +15,8 @@ export type Evidence = Omit<Candidate, "id" | "revision"> & {
   complete: boolean; text_truncated: boolean;
   /** Browser-only identity tokens; source URLs and stream objects never enter the API payload. */
   media_revisions: number[];
+  /** Browser-local membership and site identity, excluded from Candidate payloads. */
+  ownership_revision: string;
 };
 const mediaIdentities = new WeakMap<Element, { sources: string; stream: unknown; revision: number }>();
 let mediaRevision = 0;
@@ -36,15 +41,20 @@ export function visible(el: Element): el is HTMLElement {
   return el.getClientRects().length > 0 && style.visibility !== "hidden" && style.display !== "none";
 }
 
-/** Follow rendered ancestry, including assigned slots and open shadow hosts. */
-export function renderedParent(el: Element): Element | null {
-  if (el.assignedSlot) return el.assignedSlot;
-  if (el.parentElement) return el.parentElement;
-  const root = el.getRootNode();
-  return root instanceof ShadowRoot ? root.host : null;
+/** A logical item's key can be display:contents or enclose disjoint regions. */
+export function visibleItem(el: HTMLElement): boolean {
+  const scope = ownership(el);
+  return scope ? scope.nodes.some(node => visible(node instanceof Element ? node : node.parentElement!)) : visible(el);
 }
 
-function textNodes(root: Element, onShadow?: (root: ShadowRoot) => void,
+/** Physical containment alone must not swallow independent replies or reviews. */
+export function owns(parent: HTMLElement, child: HTMLElement): boolean {
+  if (!containsRendered(parent, child)) return false;
+  const scope = ownership(parent);
+  return scope ? scope.nodes.some(node => containsRendered(node, child)) : containsRendered(parent, child);
+}
+
+function textNodes(root: Node, onShadow?: (root: ShadowRoot) => void,
                    onElement?: (element: Element) => void): Text[] {
   const nodes: Text[] = [];
   const visited = new Set<Node>();
@@ -95,12 +105,17 @@ function tokens(el: Element): string[] {
   return `${el.id} ${el.getAttribute("class") || ""}`.replace(/([a-z])([A-Z])/g, "$1 $2").split(/[^a-zA-Z]+/).filter(Boolean);
 }
 
-function block(el: HTMLElement, isItem: (el: HTMLElement) => boolean): HTMLElement {
+function block(el: HTMLElement, isItem: (el: HTMLElement) => boolean,
+               resolve: (el: Element) => ItemScope | null, adapter?: SiteAdapter): HTMLElement | null {
+  if (protectedByAdapter(el, adapter)) return null;
+  const scope = resolve(el);
+  if (scope) return scope.key;
+
   // A web component may be a single item or an entire feed. Never cross a
   // collection boundary merely because its enclosing host is compact.
   let component: HTMLElement | undefined;
   for (let node: Element | null = el; node && !node.matches(PAGE);) {
-    if (node.matches(COLLECTION)) break;
+    if (node.matches(COLLECTION) || adapter?.rules.some(rule => node!.matches(rule.selector))) break;
     // Article semantics define a block for ordinary posts and paid placements alike.
     if (node instanceof HTMLElement && isItem(node)) return node;
     if (!component && node instanceof HTMLElement && node.shadowRoot &&
@@ -114,39 +129,48 @@ function block(el: HTMLElement, isItem: (el: HTMLElement) => boolean): HTMLEleme
   return target;
 }
 
-export function discover(root: Element, onShadow?: (root: ShadowRoot) => void): HTMLElement[] {
+export function discover(root: Element, onShadow?: (root: ShadowRoot) => void,
+                         url = new URL(location.href)): HTMLElement[] {
   if (root.closest(EXCLUDED)) return [];
   const isItem = itemBoundaries(visible);
+  const adapter = adapterFor(url);
+  const resolve = ownershipResolver(url);
   const media: HTMLElement[] = [];
   const nodes = textNodes(root, onShadow, element => {
     if (element.matches(MEDIA) && visible(element)) media.push(element);
   });
   const blocks = new Set<HTMLElement>();
   for (const node of nodes) {
-    const target = block(node.parentElement!, isItem);
-    if (target.matches(PAGE)) continue;
+    const target = block(node.parentElement!, isItem, resolve, adapter);
+    if (!target || (target.matches(PAGE) && !resolve(target))) continue;
     blocks.add(target);
   }
   // Every rendered media block is eligible, including benign frames. Jev alone
   // determines whether its available metadata supports removal.
-  for (const element of media) blocks.add(block(element, isItem));
+  for (const element of media) {
+    const target = block(element, isItem, resolve, adapter);
+    if (target) blocks.add(target);
+  }
   // Candidate discovery is intentionally semantic-neutral; Jev classifies every block.
   for (const el of blocks) {
-    for (let parent = el.parentElement; parent; parent = parent.parentElement) {
-      if (blocks.has(parent)) blocks.delete(parent);
+    for (let parent = renderedParent(el); parent; parent = renderedParent(parent)) {
+      if (!(parent instanceof HTMLElement) || !blocks.has(parent)) continue;
+      const scope = resolve(parent);
+      if (!scope || scope.nodes.some(node => containsRendered(node, el))) blocks.delete(parent);
     }
   }
   return [...blocks];
 }
 
-export function evidence(el: HTMLElement): Evidence {
+export function evidence(el: HTMLElement, url = new URL(location.href)): Evidence {
   const anchors: HTMLElement[] = [];
   const media: HTMLElement[] = [];
-  const nodes = textNodes(el, undefined, element => {
+  const scope = ownership(el, url);
+  const nodes = (scope?.nodes || [el]).flatMap(root => textNodes(root, undefined, element => {
     if (!visible(element)) return;
     if (element.matches("a[href]")) anchors.push(element);
     if (element.matches(MEDIA)) media.push(element);
-  });
+  }));
   const mediaDescriptions = media.flatMap(node => {
     const descriptions = [node.getAttribute("alt") || ""];
     for (const [attribute, label] of [["title", "Media title"], ["aria-label", "Media label"], ["aria-description", "Media description"]]) {
@@ -178,5 +202,6 @@ export function evidence(el: HTMLElement): Evidence {
     text_truncated: fullText.length > MAX_TEXT,
     media_revisions: media.length ? [...media, ...anchors, ...media.flatMap(node => [...node.querySelectorAll("source")])]
       .map(mediaIdentity) : [],
+    ownership_revision: scope ? ownershipFingerprint(scope) : "",
   };
 }
