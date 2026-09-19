@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>denied. — Removal motion</title>
+<style>
+  :root { color-scheme: light; --page: #f5f5f5; --surface: #fff; --ink: #202020; --muted: #777; --line: #e6e6e6; }
+  :root[data-theme="dark"] { color-scheme: dark; --page: #161616; --surface: #232323; --ink: #efefef; --muted: #999; --line: #383838; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink); font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-kerning: normal; text-rendering: optimizeLegibility; }
+  button { font: inherit; cursor: pointer; }
+  button:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
+  button:disabled { opacity: .45; cursor: default; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 28px 40px; }
+  .brand { font-size: 30px; font-weight: 760; }
+  .theme { color: var(--ink); border: 1px solid var(--line); padding: 9px 15px; background: none; border-radius: 30px; }
+  main { max-width: 740px; margin: 42px auto 60px; padding: 0 24px; }
+  .eyebrow { color: var(--muted); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+  h1 { font-size: clamp(28px, 4vw, 40px); line-height: 1.15; font-weight: 630; margin: 14px 0; }
+  .intro { color: var(--muted); margin: 0 0 32px; max-width: 55ch; }
+  .conversation { background: var(--surface); border: 1px solid var(--line); border-radius: 24px; padding: 26px; box-shadow: 0 12px 48px #00000006; }
+  .channel { display: flex; gap: 12px; align-items: center; padding-bottom: 22px; border-bottom: 1px solid var(--line); margin-bottom: 22px; }
+  .channel strong { font-weight: 620; } .channel p { color: var(--muted); font-size: 13px; margin: 3px 0 0; }
+  .channel-mark { background: var(--page); border-radius: 12px; width: 42px; height: 42px; display: grid; place-items: center; font-size: 22px; }
+  .message { display: flex; gap: 14px; margin: 0 0 22px; padding: 0; min-height: 42px; }
+  #unwanted { padding: 14px; background: var(--page); border-radius: 16px; }
+  .avatar { flex: 0 0 38px; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: var(--page); border: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+  .body { padding-top: 1px; min-width: 0; }
+  .byline { font-size: 14px; display: flex; align-items: baseline; gap: 9px; margin-bottom: 5px; }
+  .byline strong { font-weight: 600; } time { font-size: 12px; color: var(--muted); }
+  .body p { margin: 0; max-width: 52ch; }
+  .composer { border: 1px solid var(--line); border-radius: 14px; padding: 14px; color: var(--muted); font-size: 14px; }
+  .controls { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-top: 26px; }
+  .controls p { font-size: 13px; color: var(--muted); margin: 0; }
+  #replay { border: 0; border-radius: 30px; padding: 13px 22px; background: var(--ink); color: var(--surface); white-space: nowrap; }
+  footer { margin-top: 28px; color: var(--muted); font-size: 12px; }
+  @media (max-width: 560px) { header { padding: 22px 24px; } main { margin-top: 20px; } .conversation { padding: 18px; } .controls { align-items: flex-start; } }
+</style>
+<header><span class="brand">denied.</span><button class="theme" type="button">Dark appearance</button></header>
+<main>
+  <div class="eyebrow">Removal motion</div>
+  <h1>Gone. Keep the conversation.</h1>
+  <p class="intro">Wind up. Spin faster. Break apart.</p>
+  <section class="conversation" aria-label="Example conversation">
+    <div class="channel"><span class="channel-mark" aria-hidden="true">#</span><div><strong>Design club</strong><p>Today’s conversation</p></div></div>
+    <div id="messages"></div>
+    <div class="composer">The conversation continues.</div>
+  </section>
+  <div class="controls"><p id="status" role="status">One unwanted message.<br>The rest stays exactly where it belongs.</p><button id="replay" type="button">Play removal ↗</button></div>
+  <footer>Animation-only demonstration · Uses the extension’s actual removal renderer.<br>No inference request is made by this preview.</footer>
+</main>
+<template id="thread">
+  <article class="message"><div class="avatar" aria-hidden="true">JL</div><div class="body"><div class="byline"><strong>Jordan Lee</strong><time>10:42</time></div><p>Anyone bringing their sketches to the workshop?</p></div></article>
+  <article class="message" id="unwanted"><div class="avatar" aria-hidden="true">?</div><div class="body"><div class="byline"><strong>Unknown account</strong><time>10:43</time></div><p>Your account will be deleted today. Send your password and verification code to keep access.</p></div></article>
+  <article class="message"><div class="avatar" aria-hidden="true">AM</div><div class="body"><div class="byline"><strong>Alex Morgan</strong><time>10:44</time></div><p>I am. See you at the studio in ten minutes.</p></div></article>
+</template>
+<script type="module">
+  import { removeElement } from "/effects.js";
+  const messages = document.querySelector("#messages");
+  const replay = document.querySelector("#replay");
+  const status = document.querySelector("#status");
+  const reset = () => messages.replaceChildren(document.querySelector("#thread").content.cloneNode(true));
+  reset();
+  replay.addEventListener("click", async () => {
+    replay.disabled = true;
+    reset();
+    status.textContent = "Watch the middle message.";
+    await new Promise(resolve => setTimeout(resolve, 500));
+    const element = document.querySelector("#unwanted");
+    await removeElement(element, { animate: true }, () => element.isConnected);
+    status.textContent = "Removed. Nothing else interrupted.";
+    await new Promise(resolve => setTimeout(resolve, 500));
+    replay.textContent = "Replay removal ↗";
+    replay.disabled = false;
+  });
+  document.querySelector(".theme").addEventListener("click", event => {
+    const dark = document.documentElement.dataset.theme !== "dark";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+    event.currentTarget.textContent = dark ? "Light appearance" : "Dark appearance";
+  });
+</script>
+</html>

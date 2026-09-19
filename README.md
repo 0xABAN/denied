@@ -81,8 +81,14 @@ bun run build
 bunx playwright install chromium
 bun run test:api
 bun run test:extension
+# Focused real-provider extension check: removals, glass glint, shards, counters:
+bun run test:extension --motion-only
 # 600-block waves (20 blocks/request) and live shadow-root mutation coverage:
 bun tests/waves.real.ts
+# Native removal renderer: monochrome output, cancellation, reduced motion, concurrency:
+bun tests/removal.browser.ts
+# Optional replayable animation-only preview (prints a local URL):
+bun tests/motion-preview.ts
 # Real provider and browser-transport latency (three 600-block waves each):
 bun tests/latency.real.ts
 cd backend && uv run --env-file .env python benchmark_latency.py
@@ -124,9 +130,21 @@ For the all-judgments/single-date change, typecheck/build, all seven real API te
 
 ## Architecture
 
+### Experimental ownership evaluation
+
+The isolated [ownership suite](tests/ownership/README.md) contains 72 authored
+scenarios, 216 rendered variants, and guarded-deletion checks. It evaluates real
+Jev ownership decisions separately from extraction and removal correctness. The
+first real run exposed substantial incomplete parent removals, so the prototype
+has **not** replaced production discovery or filtering. See the suite README for
+reproducible commands, measured results, and limitations.
+
+### Shipping modules
+
 - `extension/src/scan.ts`: candidate boundaries and evidence extraction.
 - `extension/src/content.ts`: bounded queue, revisions, retries, and stale-result rejection.
-- `extension/src/effects.ts`: native glow/pop animation, notices, and diagnostic labels.
+- `extension/src/effects.ts`: notices, diagnostic labels, and the removal entry point.
+- `extension/src/motion/`: guarded accelerating spin with wobble and glass glint, layout collapse, and bounded monochrome shard rendering.
 - `extension/src/background.ts`: fixed API bridge, trusted settings, and cumulative counters.
 - `extension/src/transport.ts`: bounded streaming transport; coalesces up to 30 batches without holding completed results.
 - `extension/src/popup.ts`: the compact HTML/CSS settings interface.

@@ -8,6 +8,8 @@ import type { Batch, Judgments, PageStats } from "../extension/src/contracts";
 import { localAPI, until } from "./api";
 
 const publicOnly = process.argv.includes("--public-only");
+const motionOnly = process.argv.includes("--motion-only");
+assert(!(publicOnly && motionOnly), "Choose --public-only or --motion-only, not both");
 const publicURLs = process.argv.filter(arg => /^https:\/\//.test(arg));
 const SCAM = "Your bank account will be deleted in ten minutes. Reply with your password and verification code so our agent can save it.";
 const GAMBLING = "Join our online casino and place real-money bets to win cash prizes.";
@@ -111,13 +113,19 @@ try {
   pass("actual FastAPI/Jev decisions remove an ad and a scam, retain benign content, exclude inputs");
 
   await add("animated", SCAM);
-  await page.waitForFunction(() => document.querySelector("#animated")?.getAnimations().some(a => a.effect?.getTiming().duration === 450));
+  await page.waitForFunction(() => document.querySelector("#animated")?.getAnimations().some(a => a.effect?.getTiming().duration === 700));
+  assert.equal(await page.locator('[data-denied-ui="glint"]').count(), 1,
+    "A real Jev-triggered removal must use the glass-glint renderer");
   await mkdir("artifacts", { recursive: true });
-  await page.screenshot({ path: "artifacts/real-glow.png" });
-  await page.waitForFunction(() => document.querySelector("#animated")?.getAnimations().some(a => a.effect?.getTiming().duration === 320));
+  await page.waitForSelector("canvas[data-denied-ui='burst']");
+  await page.screenshot({ path: "artifacts/real-burst.png" });
   await page.waitForSelector("#animated", { state: "detached" });
-  pass("real flagged content pulses for 450ms twice and pops for 320ms before deletion");
+  await page.waitForSelector("canvas[data-denied-ui='burst']", { state: "detached" });
+  assert.equal(await page.locator('[data-denied-ui="glint"]').count(), 0);
+  assert.equal((await stats()).total, 3);
+  pass("real flagged content spins with a glass glint, explodes, counts once, and cleans up");
 
+  if (!motionOnly) {
   await add("stale", SCAM);
   await until(() => forTarget("stale").length > 0, "real request dispatched");
   await page.locator("#stale").evaluate(el => { el.textContent = "The library reading group meets on Saturday."; });
@@ -229,9 +237,11 @@ try {
   await popup.screenshot({ path: "artifacts/real-popup.png" });
   pass("settings and counts survive actual service-worker shutdown", { removals: finalCount });
   }
+  }
 
   // Public pages use the same unmodified extension and provider. No login or cookie-consent actions.
-  for (const url of publicURLs.length ? publicURLs : ["https://example.com/", "https://www.python.org/about/", "https://www.w3schools.com/html/"]) {
+  const sites = motionOnly ? [] : publicURLs.length ? publicURLs : ["https://example.com/", "https://www.python.org/about/", "https://www.w3schools.com/html/"];
+  for (const url of sites) {
     await popup.locator("#enabled").uncheck();
     try {
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });

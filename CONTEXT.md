@@ -113,14 +113,14 @@ Use `DENIED_RECORD_HISTORY=0` to disable both datasets. Retain the legacy off-sw
 
 ## Interface and motion
 
-Preserve this sequence after a removal decision:
+Use a lively monochrome removal, with no colored warning pulse or screenshot capture:
 
-1. Add a 3px rose-red outline to the visible element.
-2. Pulse an expanding glow twice, 450ms per pulse.
-3. Over 320ms, enlarge to 1.08 times its size, then shrink to zero while fading.
-4. Delete the element from the DOM and let the page reflow.
+1. Flash a 3px white outline twice over the first 180ms, concurrently with the wind-up so there is no additional removal delay. Each 90ms blink is 54ms on and 36ms off; afterward the original outline returns. Keep the target intact through four accelerating Y-axis turns over 700ms, with perspective so it turns left-right toward the viewer. Layer in a growing, faster wobble, bounded to 18px horizontally, 8px vertically, and 12 degrees of tilt. A narrow diagonal glint sweeps across a clipped overlay sharing the target’s spin, like light catching glass. Recenter at the burst handoff and shrink only to 86% as it winds up.
+2. At peak speed, hide the target and simultaneously release six large pointed shards from an off-center impact point, with irregular triangular cuts rather than rectangular tiles. Keep them chunky throughout their flight, fading rather than shrinking into dust. A bounded local canvas atlas approximates visible text and painted backgrounds; media pixels and private inputs are never copied. This is not a pixel-exact screenshot.
+3. Close the vacated vertical space over 250ms where the target's layout permits it, then recheck the evidence and delete the target. Do not wait for decorative fragments before reporting a committed deletion.
+4. Let the explosion fade independently over 520ms, with the entire visual sequence ending around 1.22 seconds. Changed evidence cancels the pending deletion and its decoration.
 
-The animation takes about 1.22 seconds after judgment. Schedule a 2.5-second fallback to remove the element if animation completion stalls. Hidden tabs, disabled animation, and reduced-motion preferences use immediate removal.
+The typical layout-preserving removal commits around 950ms after judgment. A 1.6-second fallback handles stalled animation completion. Hidden tabs, offscreen targets, disabled animation, and reduced-motion preferences use immediate removal. Scrolling during wind-up, nested-container scrolling, and resizing discard stale decorative geometry. After release, shards follow document scrolling so automatic scroll anchoring during layout collapse does not erase the explosion. At most four particle layers and four glints run concurrently; additional removals still proceed without queuing. Glints never enter the target’s content or evidence, disappear at the burst or cancellation, and are omitted for targets with an existing transform that cannot be mirrored faithfully. Atlas and output bitmaps are capped near one and two million pixels each. Preserve host inline styles and unrelated animations.
 
 Do not add a cover-first loading state, replacement placeholder, or child-facing restore button. A debug highlight-only mode can show the matching filter and score without deleting content. Clearly distinguish that mode from active removal.
 

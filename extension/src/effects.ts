@@ -1,8 +1,7 @@
 import { OWN, type Decision, type Settings } from "./contracts";
+import { removeWithMotion } from "./motion/removal";
 
 const ROSE = "#e11d48";
-const PULSE_MS = 450;
-const POP_MS = 320;
 const highlights = new Map<HTMLElement, () => void>();
 let toast: HTMLElement | undefined;
 let toastTimer: ReturnType<typeof setTimeout>;
@@ -26,51 +25,7 @@ export function highlight(el: HTMLElement, result: Decision): void {
 
 /** Resolve true only when this effect removed the still-current target. */
 export function removeElement(el: HTMLElement, settings: Settings, current: () => boolean): Promise<boolean> {
-  if (!current()) return Promise.resolve(false);
-  if (!settings.animate || document.hidden || matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    el.remove();
-    return Promise.resolve(true);
-  }
-  const previous = { outline: el.style.outline, outlineOffset: el.style.outlineOffset, transformOrigin: el.style.transformOrigin };
-  return new Promise(resolve => {
-    let finished = false;
-    const animations: Animation[] = [];
-    const finish = () => {
-      if (finished) return;
-      finished = true;
-      clearTimeout(fallback);
-      document.removeEventListener("visibilitychange", hidden);
-      const remove = el.isConnected && current();
-      animations.forEach(a => a.cancel());
-      Object.assign(el.style, previous);
-      if (remove) el.remove();
-      resolve(remove);
-    };
-    const hidden = () => { if (document.hidden) finish(); };
-    // Browser timers can be throttled; this is a fallback, not a real-time guarantee.
-    const fallback = setTimeout(finish, 2500);
-    document.addEventListener("visibilitychange", hidden);
-    Object.assign(el.style, { outline: `3px solid ${ROSE}`, outlineOffset: "-3px", transformOrigin: "center" });
-    void (async () => {
-      try {
-        const pulse = el.animate([
-          { outlineColor: ROSE, boxShadow: "0 0 0 0 rgba(225,29,72,.75)" },
-          { outlineColor: "#fb7185", boxShadow: "0 0 0 14px rgba(225,29,72,0)" },
-        ], { duration: PULSE_MS, iterations: 2, easing: "ease-out" });
-        animations.push(pulse);
-        await pulse.finished;
-        if (finished || !current()) return;
-        const pop = el.animate([
-          { transform: "scale(1)", opacity: 1 },
-          { transform: "scale(1.08)", opacity: 1, offset: 0.3 },
-          { transform: "scale(0)", opacity: 0 },
-        ], { duration: POP_MS, easing: "cubic-bezier(.5,0,.9,.4)", fill: "forwards" });
-        animations.push(pop);
-        await pop.finished;
-      } catch { /* The guarded finish path also handles a canceled animation. */ }
-      finally { finish(); }
-    })();
-  });
+  return removeWithMotion(el, settings, current);
 }
 
 export function notify(message: string): void {
