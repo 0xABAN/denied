@@ -8,7 +8,27 @@ const MEDIA = "iframe,img,video,audio,canvas,object,embed";
 const LABEL = /^(ad|advertisement|sponsored(?: content)?|paid partnership|promoted|anzeige|werbung)$/i;
 const HOSTS = ["doubleclick.net", "googlesyndication.com", "googleadservices.com", "taboola.com", "outbrain.com", "amazon-adsystem.com"];
 const MAX_TEXT = 24000;
-export type Evidence = Omit<Candidate, "id" | "revision"> & { complete: boolean; text_truncated: boolean };
+export type Evidence = Omit<Candidate, "id" | "revision"> & {
+  complete: boolean; text_truncated: boolean;
+  /** Browser-only identity tokens; source URLs and stream objects never enter the API payload. */
+  media_revisions: number[];
+};
+const mediaIdentities = new WeakMap<Element, { sources: string; stream: unknown; revision: number }>();
+let mediaRevision = 0;
+
+/** Source paths can change without changing hostnames or titles. Keep that
+ * distinction local so a late judgment cannot remove a replacement video.
+ */
+function mediaIdentity(node: Element): number {
+  const sources = JSON.stringify(["src", "srcset", "poster", "data", "href", "type"].map(name => node.getAttribute(name)));
+  const stream = node instanceof HTMLMediaElement ? node.srcObject : null;
+  let previous = mediaIdentities.get(node);
+  if (!previous || previous.sources !== sources || previous.stream !== stream) {
+    previous = { sources, stream, revision: ++mediaRevision };
+    mediaIdentities.set(node, previous);
+  }
+  return previous.revision;
+}
 
 export function visible(el: Element): el is HTMLElement {
   if (!(el instanceof HTMLElement) || !el.isConnected || el.closest(EXCLUDED)) return false;
@@ -127,7 +147,14 @@ export function evidence(el: HTMLElement): Evidence {
     if (element.matches("a[href]")) anchors.push(element);
     if (element.matches(MEDIA)) media.push(element);
   });
-  const mediaDescriptions = media.map(node => node.getAttribute("alt") || node.getAttribute("title") || "");
+  const mediaDescriptions = media.flatMap(node => {
+    const descriptions = [node.getAttribute("alt") || ""];
+    for (const [attribute, label] of [["title", "Media title"], ["aria-label", "Media label"], ["aria-description", "Media description"]]) {
+      const value = node.getAttribute(attribute)?.trim();
+      if (value) descriptions.push(`${label}: ${value}`);
+    }
+    return descriptions;
+  });
   const fullText = [...nodes.map(node => node.data.trim()), ...mediaDescriptions].join(" ").replace(/\s+/g, " ").trim();
   const links = anchors.filter(visible).map(a => {
     const destination = address(a.getAttribute("href"));
@@ -145,6 +172,11 @@ export function evidence(el: HTMLElement): Evidence {
     ad: { tag: el.tagName.toLowerCase().slice(0, 20), tokens: tokens(el).join(" ").slice(0, 160), label: label.slice(0, 100),
       source_host: source.host, source_scheme: source.scheme,
       known_host: [source.host, ...links.map(l => l.destination_host)].some(knownHost), attributes, network },
-    complete: fullText.length <= MAX_TEXT && links.length <= 8, text_truncated: fullText.length > MAX_TEXT,
+    // A textless player has no safety metadata; a keep result does not check its contents.
+    complete: fullText.length <= MAX_TEXT && links.length <= 8 &&
+      (fullText.length > 0 || !media.some(node => node.matches("video,iframe"))),
+    text_truncated: fullText.length > MAX_TEXT,
+    media_revisions: media.length ? [...media, ...anchors, ...media.flatMap(node => [...node.querySelectorAll("source")])]
+      .map(mediaIdentity) : [],
   };
 }

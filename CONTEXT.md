@@ -19,7 +19,7 @@ Inspect rendered text, link labels and destinations, and relevant DOM metadata. 
 
 Urgency, a request for credentials or money, and a different destination domain are evidence, not independent proof of unsafe content. Both judgments consider page/link domains, known reputation, and URL schemes alongside the content. Unencrypted HTTP can increase concern, especially for credential or payment requests. A familiar domain may support trust, but neither reputation nor HTTPS guarantees child-appropriate content or exempts advertising. Do not invent reputations for unfamiliar domains, maintain a trusted-domain allowlist, or treat an unknown scheme as HTTP.
 
-Image, audio, and video interpretation are out of scope. An identifiable media advertisement can be removed as a whole container without analyzing its contents. That does not provide general media safety. Do not follow links, resolve redirect chains, or claim their destination pages have been checked.
+Image, audio, and video interpretation are out of scope. On-page video titles/descriptions and media title/accessibility-description attributes are text evidence: metadata explicitly offering or describing prohibited content can justify removing its associated listing or player without inspecting the media. Educational and medical exceptions still apply. An identifiable media advertisement can likewise be removed as a whole container without analyzing its contents. Neither behavior provides general media safety. Do not follow links, resolve redirect chains, or claim their destination pages have been checked.
 
 ## Stack
 
@@ -64,6 +64,10 @@ Discovery is semantic-neutral: rendered text and media are eligible without ad-s
 
 Choose the smallest coherent offending block. Deduplicate nested candidates without collapsing an entire feed, article, or page into one removal target. Segment oversized text into bounded passages with enough surrounding context; do not silently truncate and treat the remainder as checked.
 
+For media metadata, additionally group compact containers with one player and one visible heading, or a linked thumbnail and heading sharing the same destination. Limit this structural association to at most two paragraphs and no nested collections; ambiguous layouts retain smaller targets. This is a generic first pass, not universal recognition of site-specific watch pages or custom players. Read media `title`, `aria-label`, and `aria-description` alongside rendered text, without reading pixels, audio, or embedded documents. Textless players remain partially unchecked. A keep judgment covers the supplied metadata, never the unseen video.
+
+Track media/source and linked-card identity locally, including source-path changes on the same host. Send only opaque local revision changes through the existing candidate revision mechanism; media URLs, stream objects, and internal identity-token arrays never enter inference or history payloads. Observe title/description and source-attribute changes and reject stale judgments after a player is reused.
+
 Each candidate carries a page/document identity, local candidate ID, content revision, page hostname and scheme, bounded visible text, link labels with parsed destination hosts and schemes, and relevant ad metadata including iframe-source host/scheme and recognized provider attributes. Code extracts address components and geometry; Jev interprets the evidence. Do not transmit URL paths, credentials, query strings, or fragments as address metadata. Missing or unparseable source/link schemes are empty strings, meaning unknown.
 
 Discover rendered text blocks without ad-specific candidate selectors, including open shadow roots and assigned slots. Start scanning without an initial delay, then dispatch waves of up to 600 blocks in at most 30 parallel requests of up to 20 blocks each, with at least five seconds between wave starts. Schedule the next wave independently of outstanding responses; never redispatch an in-flight revision. Apply each completed batch without waiting for sibling batches. The backend shares rolling request admission across tabs and honors provider throttling with backoff, without estimating tokens from JSON bytes. Observe additions, text changes, and relevant attribute changes inside the document and open shadow roots. Cache judgments by evidence revision and policy version, not merely DOM element identity. Ignore the extension's own UI and mutations. Do not repeatedly rescan the full document for every mutation.
@@ -91,7 +95,7 @@ Return the candidate ID, revision, both scores, removal decision, matching filte
 
 ### Applying results and handling failure
 
-Before modifying the page, confirm the document, element, evidence revision, and enabled state still match. Discard stale responses and reassess changed content. A successful request alone does not justify removing a different or updated block.
+Before modifying the page, confirm the document, element, evidence revision, and enabled state still match. Discard stale responses and reassess changed content. A successful request alone does not justify removing a different or updated block. Pause native video/audio in a current removal target before animation or deletion, including open shadow roots and assigned slots. Do not pause for stale decisions or diagnostic highlights. Opaque iframe players cannot be paused through the parent DOM; their playback stops when the iframe is removed. Canceling removal does not automatically restart paused media.
 
 On timeout, malformed response, or provider failure, leave affected content unchanged and report checking as unavailable. Unchecked is not safe. Use bounded retries and allow failed candidates to be checked again; do not cache a failure as a completed judgment.
 

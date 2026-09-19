@@ -7,7 +7,7 @@ from .schemas import Batch, Decision, Judgments, Noul
 from .dispatch import Admission
 
 ENDPOINT = "https://api.typesafe.ai/v1/systemone"
-POLICY_VERSION = "7"
+POLICY_VERSION = "8"
 BLOCKS_PER_REQUEST = 20
 MODEL_VERSION = "jev-latest"
 ADDRESS_CONTEXT = (
@@ -36,11 +36,14 @@ AD_CRITERIA = {
 SAFETY_CRITERIA = {
     "true": "Content inappropriate for children under 13: explicit sexual content, sexual grooming, "
     "graphic descriptions of violence, encouragement of suicide or self-harm, instructions for "
-    "dangerous acts or challenges, promotion of dangerous drug use, gambling solicitation, or scams.",
+    "dangerous acts or challenges, promotion of dangerous drug use, gambling solicitation, or scams. "
+    "Media titles, labels, and descriptions explicitly offering or describing this prohibited content are "
+    "also covered, even without graphic wording. Evaluate the supplied metadata, not unseen media.",
     "false": "Benign content, age-appropriate education, non-graphic medical information, prevention "
     "or help-seeking. Mentioning a sensitive topic does not alone make it unsafe. Urgency, a payment "
     "or login request, or a different link host is not alone proof of a scam. A domain is not proof "
-    "of trustworthiness. Do not infer unseen image/video content or a link's destination-page content.",
+    "of trustworthiness. A video format or missing metadata alone is not unsafe. "
+    "Do not infer unseen image/video content or a link's destination-page content.",
 }
 
 

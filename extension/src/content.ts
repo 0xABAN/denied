@@ -28,7 +28,8 @@ let skipped = new WeakSet<HTMLElement>();
 let lastInferenceStarted: number | null = null;
 const mutationOptions: MutationObserverInit = {
   subtree: true, childList: true, characterData: true, attributes: true,
-  attributeFilter: ["href", "src", "class", "id", "style", "hidden", "aria-label", "slot", "data-ad", "data-ad-slot", "data-sponsored", "data-actirise"],
+  attributeFilter: ["href", "src", "srcset", "poster", "data", "type", "title", "alt", "aria-description", "itemprop",
+    "class", "id", "style", "hidden", "aria-label", "slot", "data-ad", "data-ad-slot", "data-sponsored", "data-actirise"],
 };
 
 function stats(): PageStats {

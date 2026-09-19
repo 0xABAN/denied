@@ -38,6 +38,16 @@ The popup includes page/total counts, separate ad/safety counts, animation and t
 
 The API defaults to `http://127.0.0.1:8765`; change the origin under **Local API** if you use another local port. Provider credentials remain in the Python process. There is no frontend server to start.
 
+## Video listings: titles and descriptions only
+
+Filtering also uses on-page video titles/descriptions and media `title`, `aria-label`, and `aria-description` attributes. Compact containers with one player and one heading are checked and removed as a unit. Linked thumbnail cards can also be grouped when the thumbnail and title link to the same destination; these structural rules are not specific to YouTube and do not themselves classify content.
+
+This first pass associates one visible heading and at most two description paragraphs, avoids nested collections, and bounds container height. Ambiguous layouts retain smaller text targets rather than deleting an entire page or conversation. Separate watch-page titles, opaque embedded-page metadata, and arbitrary custom players are not universally associated. Textless players remain partially unchecked; a kept listing is not a safety assessment of its video.
+
+Native video/audio playback is paused before a current removal starts, including in open shadow roots. Opaque iframe playback stops only when its iframe is deleted. Title/description and media-source attribute changes trigger reassessment; local identity tokens reject stale decisions after a source or linked-card destination changes without transmitting URL paths or query strings. Diagnostic highlighting does not pause playback.
+
+The extension does not download or analyze media, follow links, or use a new model/provider. Benign or misleading metadata can conceal unsafe videos. This remains reactive removal, not prevention of initial exposure.
+
 ## Optional Tiger Data judgment and removal history
 
 Keep using the same `denied.app:app` API. Set Tiger's `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, and `PGSSLMODE=require` in `backend/.env`. No separate database URL is needed. URL-only configurations can use `TIGER_DATABASE_URL` or `TIMESCALE_SERVICE_URL`; populated native `PG_*` settings take precedence.
@@ -81,6 +91,8 @@ bun run build
 bunx playwright install chromium
 bun run test:api
 bun run test:extension
+# Video metadata association/playback checks plus actual extension/FastAPI/Jev filtering:
+bun run test:video
 # Focused real-provider extension check: removals, glass glint, shards, counters:
 bun run test:extension --motion-only
 # 600-block waves (20 blocks/request) and live shadow-root mutation coverage:
@@ -130,7 +142,7 @@ For the all-judgments/single-date change, typecheck/build, all seven real API te
 
 ## Architecture
 
-- `extension/src/scan.ts`: candidate boundaries and evidence extraction.
+- `extension/src/scan.ts` and `extension/src/grouping.ts`: candidate boundaries, media-card association, and text/metadata evidence extraction.
 - `extension/src/content.ts`: bounded queue, revisions, retries, and stale-result rejection.
 - `extension/src/effects.ts`: notices, diagnostic labels, and the removal entry point.
 - `extension/src/motion/`: guarded accelerating spin with wobble and glass glint, layout collapse, and bounded monochrome shard rendering.

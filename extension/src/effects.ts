@@ -23,8 +23,21 @@ export function highlight(el: HTMLElement, result: Decision): void {
   highlights.set(el, () => { el.style.outline = outline; tag.remove(); });
 }
 
+/** Stop native playback, including open shadow roots and slotted media. Opaque
+ * iframe players stop when their containing iframe is removed, not via this API.
+ */
+function pauseMedia(root: Element | ShadowRoot): void {
+  for (const node of [root, ...root.querySelectorAll("*")]) {
+    if (node instanceof HTMLMediaElement) node.pause();
+    if (node instanceof Element && node.shadowRoot) pauseMedia(node.shadowRoot);
+    if (node instanceof HTMLSlotElement) node.assignedElements({ flatten: true }).forEach(pauseMedia);
+  }
+}
+
 /** Resolve true only when this effect removed the still-current target. */
 export function removeElement(el: HTMLElement, settings: Settings, current: () => boolean): Promise<boolean> {
+  if (!current()) return Promise.resolve(false);
+  pauseMedia(el);
   return removeWithMotion(el, settings, current);
 }
 

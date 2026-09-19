@@ -7,6 +7,7 @@
     "typecheck": "tsc --noEmit",
     "test:api": "cd backend && uv run --env-file .env python -m unittest discover -s tests -v",
     "test:extension": "bun tests/extension.smoke.ts",
+    "test:video": "bun tests/video.browser.ts && bun tests/video.real.ts",
     "test:telemetry": "uv run --project backend --env-file backend/.env bun tests/telemetry.smoke.ts",
     "test:live": "bun tests/live.ts"
   },
