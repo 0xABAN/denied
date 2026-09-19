@@ -3,25 +3,26 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>denied.</title>
+  <title>noped.</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <header><h1>denied.</h1></header>
+  <header><h1>noped.</h1></header>
   <section class="stats" aria-label="Removal counts">
     <div><strong id="page-total">0</strong><span>on this page</span></div>
     <div><strong id="all-total">0</strong><span>total removed</span></div>
   </section>
-  <p class="hint">A block can match both filters and is removed once.</p>
-  <p id="page-status" role="status">Loading page status…</p>
-  <p id="history-status" role="status"></p>
   <section class="options">
-    <label for="mode">Mode</label>
-    <select id="mode"><option value="remove">Remove flagged content</option><option value="highlight">Highlight only (diagnostic)</option></select>
+    <label class="switch-row" for="enabled"><span>Protection</span><input id="enabled" type="checkbox" role="switch"></label>
+    <label class="switch-row" for="animate"><span>Removal effects</span><input id="animate" type="checkbox" role="switch"></label>
     <button id="rescan" type="button">Rescan page</button>
   </section>
+  <p id="page-status" role="status">Loading page status…</p>
+  <p id="history-status" role="status"></p>
   <details>
-    <summary>Local API</summary>
+    <summary>Advanced settings</summary>
+    <label for="mode">Mode</label>
+    <select id="mode"><option value="remove">Remove flagged content</option><option value="highlight">Highlight only (diagnostic)</option></select>
     <label for="apiBase">API origin</label>
     <input id="apiBase" type="url" spellcheck="false" autocomplete="off">
     <div class="row"><button id="save" type="button">Save</button><button id="check" type="button">Check connection</button></div>
@@ -29,7 +30,6 @@
   </details>
   <p id="service-status" role="status">Checking local API…</p>
   <p id="error" role="alert"></p>
-  <footer>When enabled, selected text goes through your API to Jev. If recording is configured, all judged passages—including kept text—and actual removals are stored in Tiger Data with scores and timing. Inputs and drafts are excluded. Content stays visible until removal.</footer>
   <script type="module" src="popup.js"></script>
 </body>
 </html>

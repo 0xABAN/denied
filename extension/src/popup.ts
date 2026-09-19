@@ -44,6 +44,8 @@ async function check(): Promise<void> {
 async function save(): Promise<void> {
   const updated = {
     ...config,
+    enabled: element<HTMLInputElement>("enabled").checked,
+    animate: element<HTMLInputElement>("animate").checked,
     mode: element<HTMLSelectElement>("mode").value,
     apiBase: element<HTMLInputElement>("apiBase").value,
   };
@@ -57,6 +59,8 @@ function action(operation: () => Promise<void>): void {
 }
 
 element("mode").addEventListener("change", () => action(save));
+element("enabled").addEventListener("change", () => action(save));
+element("animate").addEventListener("change", () => action(save));
 element("save").addEventListener("click", () => action(async () => { await save(); await check(); }));
 element("check").addEventListener("click", () => action(check));
 element("rescan").addEventListener("click", () => action(async () => {
@@ -68,6 +72,8 @@ element("rescan").addEventListener("click", () => action(async () => {
 
 action(async () => {
   config = (await send({ type: "settings" })).settings;
+  element<HTMLInputElement>("enabled").checked = config.enabled;
+  element<HTMLInputElement>("animate").checked = config.animate;
   element<HTMLSelectElement>("mode").value = config.mode;
   element<HTMLInputElement>("apiBase").value = config.apiBase;
   await Promise.all([refresh(), check()]);
