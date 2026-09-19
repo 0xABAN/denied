@@ -1,4 +1,4 @@
-"""Browser-confirmed removals in Tiger; signed judgments keep classification server-owned."""
+"""Every judgment and actual removal in Tiger; classification remains server-owned."""
 
 import base64
 from datetime import datetime, timezone
@@ -8,7 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
-from uuid import NAMESPACE_OID, uuid5
+from uuid import NAMESPACE_OID, uuid4, uuid5
 
 import psycopg
 from psycopg import sql
@@ -25,7 +25,7 @@ class Claim(StrictModel):
     page_scheme: str
     decision: Decision
     text_hash: str
-    judged_at: AwareDatetime
+    issued_at: int
     judge_ms: int
     policy_version: str
     model_version: str
@@ -44,8 +44,7 @@ class Removal(StrictModel):
     revision: int = Field(ge=1)
     removed_text: str = Field(max_length=24000)
     text_truncated: bool
-    detected_at: AwareDatetime
-    removed_at: AwareDatetime
+    date: AwareDatetime
     total_ms: int = Field(ge=0, le=86_400_000)
     passages: list[Passage] = Field(min_length=1, max_length=20)
 
@@ -61,8 +60,8 @@ def schema_name() -> str:
     return name
 
 
-def table() -> sql.Identifier:
-    return sql.Identifier(schema_name(), "removals")
+def table(name: str = "removals") -> sql.Identifier:
+    return sql.Identifier(schema_name(), name)
 
 
 def connect():
@@ -71,33 +70,59 @@ def connect():
     sslmode = os.environ.get("PGSSLMODE", "require")
     if sslmode not in ("require", "verify-ca", "verify-full"):
         raise ValueError("Tiger connections require TLS")
-    return psycopg.connect(dsn, sslmode=sslmode, connect_timeout=3, options="-c statement_timeout=3000", row_factory=dict_row)
+    return psycopg.connect(dsn, sslmode=sslmode, connect_timeout=3,
+                           options="-c statement_timeout=3000 -c timezone=UTC", row_factory=dict_row)
 
 
 def initialize() -> None:
     with connect() as connection:
         connection.execute(sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(sql.Identifier(schema_name())))
         statement = Path(__file__).resolve().parents[1].joinpath("schema.sql").read_text()
-        connection.execute(sql.SQL(statement).format(table=table()))
+        connection.execute(sql.SQL(statement).format(
+            table=table(), judgments=table("judgments"), schema=sql.Literal(schema_name()),
+        ))
 
 
 def _signature(payload: bytes, key: str) -> str:
     return hmac.new(key.encode(), b"denied-removal-v1\0" + payload, hashlib.sha256).hexdigest()
 
 
-def issue_receipts(batch: Batch, judgments: Judgments, key: str, judge_ms: int,
-                   ad_threshold: float, safety_threshold: float, model_version: str) -> None:
-    """Issue capabilities only for positive judgments. No database write or page text here."""
-    judged_at = datetime.now(timezone.utc)
+def prepare_judgments(batch: Batch, judgments: Judgments, key: str, judge_ms: int,
+                      ad_threshold: float, safety_threshold: float, model_version: str) -> list[dict]:
+    """Prepare every passage for storage and attach removal receipts only to positives."""
+    date = datetime.now(timezone.utc)
+    batch_id = uuid4()
+    rows = []
     for candidate, decision in zip(batch.candidates, judgments.results):
-        if not decision.remove:
-            continue
-        claim = Claim(document_id=batch.document_id, page_host=batch.page_host, page_scheme=batch.page_scheme,
-                      decision=decision.model_copy(deep=True), text_hash=hashlib.sha256(candidate.text.encode()).hexdigest(),
-                      judged_at=judged_at, judge_ms=judge_ms, policy_version=judgments.policy_version,
-                      model_version=model_version, ad_threshold=ad_threshold, safety_threshold=safety_threshold)
-        payload = claim.model_dump_json().encode()
-        decision.receipt = base64.urlsafe_b64encode(payload).decode() + "." + _signature(payload, key)
+        rows.append({
+            "batch_id": batch_id, "candidate_id": candidate.id, "document_id": batch.document_id,
+            "target_id": candidate.id.rsplit(":", 1)[0], "revision": candidate.revision, "date": date,
+            "page_host": batch.page_host, "page_scheme": batch.page_scheme,
+            "text": candidate.text, "links": [link.model_dump() for link in candidate.links], "ad": candidate.ad.model_dump(),
+            "ad_score": decision.ad_score, "unsafe_score": decision.unsafe_score,
+            "decision": "remove" if decision.remove else "keep", "reasons": decision.reasons,
+            "ad_threshold": ad_threshold, "safety_threshold": safety_threshold,
+            "policy_version": judgments.policy_version, "model_version": model_version, "judge_ms": judge_ms,
+        })
+        if decision.remove:
+            # issued_at is only an internal capability expiry marker, never a stored date field.
+            claim = Claim(document_id=batch.document_id, page_host=batch.page_host, page_scheme=batch.page_scheme,
+                          decision=decision.model_copy(deep=True), text_hash=hashlib.sha256(candidate.text.encode()).hexdigest(),
+                          issued_at=int(date.timestamp()), judge_ms=judge_ms, policy_version=judgments.policy_version,
+                          model_version=model_version, ad_threshold=ad_threshold, safety_threshold=safety_threshold)
+            payload = claim.model_dump_json().encode()
+            decision.receipt = base64.urlsafe_b64encode(payload).decode() + "." + _signature(payload, key)
+    return rows
+
+
+def insert_judgments(rows: list[dict]) -> None:
+    columns = list(rows[0])
+    statement = sql.SQL("INSERT INTO {table} ({columns}) VALUES ({values}) ON CONFLICT DO NOTHING").format(
+        table=table("judgments"), columns=sql.SQL(",").join(map(sql.Identifier, columns)),
+        values=sql.SQL(",").join(sql.Placeholder(name) for name in columns),
+    )
+    with connect() as connection, connection.cursor() as cursor:
+        cursor.executemany(statement, ({**row, "links": Jsonb(row["links"]), "ad": Jsonb(row["ad"])} for row in rows))
 
 
 def removal_row(item: Removal, key: str) -> dict:
@@ -110,7 +135,7 @@ def removal_row(item: Removal, key: str) -> dict:
         if not hmac.compare_digest(signature.encode(), _signature(payload, key).encode()):
             raise ValueError("Invalid receipt")
         claim = Claim.model_validate_json(payload)
-        age = (datetime.now(timezone.utc) - claim.judged_at).total_seconds()
+        age = datetime.now(timezone.utc).timestamp() - claim.issued_at
         target = claim.decision.id.rsplit(":", 1)[0]
         if (not 0 <= age <= 900 or not claim.decision.remove or
                 claim.document_id != item.document_id or target != item.target_id or claim.decision.revision != item.revision or
@@ -128,10 +153,10 @@ def removal_row(item: Removal, key: str) -> dict:
         event_id=uuid5(NAMESPACE_OID, json.dumps([item.document_id, item.target_id, item.revision])),
         page_host=claims[0].page_host, page_scheme=claims[0].page_scheme,
         reasons=sorted({reason for claim in claims for reason in claim.decision.reasons}),
-        judged_at=max(claim.judged_at for claim in claims), judge_ms=max(claim.judge_ms for claim in claims),
+        judge_ms=max(claim.judge_ms for claim in claims),
         classifications=[{
             **claim.decision.model_dump(exclude={"receipt"}), "text": passage.text,
-            "judged_at": claim.judged_at.isoformat(), "judge_ms": claim.judge_ms,
+            "judge_ms": claim.judge_ms,
             "policy_version": claim.policy_version, "model_version": claim.model_version,
             "ad_threshold": claim.ad_threshold, "safety_threshold": claim.safety_threshold,
         } for claim, passage in zip(claims, item.passages)],
@@ -152,12 +177,20 @@ def insert(row: dict) -> None:
 
 def recent(limit: int) -> list[dict]:
     with connect() as connection:
-        return connection.execute(sql.SQL("SELECT * FROM {} ORDER BY recorded_at DESC LIMIT %s").format(table()), (limit,)).fetchall()
+        return connection.execute(sql.SQL("SELECT * FROM {} ORDER BY date DESC LIMIT %s").format(table()), (limit,)).fetchall()
+
+
+def recent_judgments(limit: int, decision: str | None) -> list[dict]:
+    with connect() as connection:
+        return connection.execute(sql.SQL("""
+            SELECT * FROM {} WHERE (%s::text IS NULL OR decision = %s)
+            ORDER BY date DESC LIMIT %s
+        """).format(table("judgments")), (decision, decision, limit)).fetchall()
 
 
 def metrics() -> dict:
     with connect() as connection:
-        return connection.execute(sql.SQL("""
+        counts = connection.execute(sql.SQL("""
             SELECT count(*) AS total_removals,
                    count(*) FILTER (WHERE 'advertising' = ANY(reasons)) AS advertising,
                    count(*) FILTER (WHERE 'unsafe_content' = ANY(reasons)) AS unsafe_content,
@@ -165,3 +198,10 @@ def metrics() -> dict:
                    percentile_cont(0.5) WITHIN GROUP (ORDER BY total_ms) AS median_total_ms
             FROM {}
         """).format(table())).fetchone()
+        counts.update(connection.execute(sql.SQL("""
+            SELECT count(*) AS total_judgments,
+                   count(*) FILTER (WHERE decision = 'keep') AS kept,
+                   count(*) FILTER (WHERE decision = 'remove') AS flagged
+            FROM {}
+        """).format(table("judgments"))).fetchone())
+        return counts

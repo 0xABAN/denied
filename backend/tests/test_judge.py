@@ -34,7 +34,7 @@ def server(**settings):
         port = reservation.getsockname()[1]
     process = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "denied.app:app", "--host", "127.0.0.1", "--port", str(port), "--no-access-log"],
-        env={**os.environ, "DENIED_RECORD_REMOVALS": "0", **settings},
+        env={**os.environ, "DENIED_RECORD_HISTORY": "0", **settings},
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     try:

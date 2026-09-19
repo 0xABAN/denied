@@ -6,10 +6,11 @@ import os
 import re
 from secrets import compare_digest
 from time import perf_counter
+from typing import Literal
 
 import httpx
 import psycopg
-from fastapi import Depends, FastAPI, Header, Query, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, Query, Request
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from pydantic import ValidationError
@@ -38,7 +39,9 @@ def create_app() -> FastAPI:
     if not (0 <= ad_threshold <= 1 and 0 <= safety_threshold <= 1):
         raise ValueError("Invalid thresholds")
     token = os.environ.get("BACKEND_API_TOKEN", "")
-    recording = os.environ.get("DENIED_RECORD_REMOVALS", "1") == "1" and telemetry.configured() and len(token) >= 32
+    # Honor the old off switch so upgrades cannot silently re-enable recording.
+    history_enabled = os.environ.get("DENIED_RECORD_HISTORY", os.environ.get("DENIED_RECORD_REMOVALS", "1")) == "1"
+    recording = history_enabled and telemetry.configured() and len(token) >= 32
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -51,7 +54,7 @@ def create_app() -> FastAPI:
                 try:
                     await asyncio.to_thread(telemetry.initialize)
                 except (psycopg.Error, ValueError):
-                    app.state.recording_error = "Removal history unavailable"
+                    app.state.recording_error = "History unavailable"
             yield
 
     api = FastAPI(title="denied.", lifespan=lifespan, docs_url=None, redoc_url=None)
@@ -87,7 +90,7 @@ def create_app() -> FastAPI:
         return bytes(body)
 
     @api.post("/judge")
-    async def evaluate(request: Request):
+    async def evaluate(request: Request, background: BackgroundTasks):
         try:
             batch = Batch.model_validate_json(await read_body(request, 128 * 1024))
         except ValidationError:
@@ -107,26 +110,35 @@ def create_app() -> FastAPI:
             # Do not return provider bodies, which can contain supplied page text or credentials.
             raise Unavailable(502, "Provider unavailable or returned an invalid judgment") from None
         if recording:
-            telemetry.issue_receipts(batch, judgments, token, judge_ms, ad_threshold, safety_threshold, MODEL_VERSION)
+            rows = telemetry.prepare_judgments(batch, judgments, token, judge_ms, ad_threshold, safety_threshold, MODEL_VERSION)
+            background.add_task(record_judgments, rows)
         return judgments
 
     async def storage_call(function, *args):
-        # Storage has its own slots/deadline and never participates in /judge.
+        # Storage has its own slots/deadline and stays off the judgment response path.
         if not telemetry.configured():
-            raise Unavailable(503, "Removal recording is not configured")
+            raise Unavailable(503, "History recording is not configured")
         try:
             async with asyncio.timeout(8), api.state.storage_slots:
                 result = await asyncio.to_thread(function, *args)
             api.state.recording_error = None
             return result
         except (TimeoutError, psycopg.Error, ValueError):
-            api.state.recording_error = "Removal history unavailable"
-            raise Unavailable(503, "Removal history unavailable; filtering remains active") from None
+            api.state.recording_error = "History unavailable"
+            raise Unavailable(503, "History unavailable; filtering remains active") from None
+
+    async def record_judgments(rows: list[dict]):
+        # Send the inference response before database I/O. Report background failures
+        # through /health, never as an exception after a successful HTTP response.
+        try:
+            await storage_call(telemetry.insert_judgments, rows)
+        except Unavailable:
+            pass
 
     @api.post("/outcomes")
     async def record_removal(request: Request):
         if not recording:
-            raise Unavailable(503, "Removal recording is not configured")
+            raise Unavailable(503, "History recording is not configured")
         try:
             item = telemetry.Removal.model_validate_json(await read_body(request, 384 * 1024))
         except ValidationError:
@@ -145,6 +157,10 @@ def create_app() -> FastAPI:
     @api.get("/removals", dependencies=[Depends(require_token)])
     async def removals(limit: int = Query(default=20, ge=1, le=100)):
         return {"items": await storage_call(telemetry.recent, limit)}
+
+    @api.get("/judgments", dependencies=[Depends(require_token)])
+    async def judgment_history(limit: int = Query(default=20, ge=1, le=100), decision: Literal["keep", "remove"] | None = None):
+        return {"items": await storage_call(telemetry.recent_judgments, limit, decision)}
 
     @api.get("/metrics", dependencies=[Depends(require_token)])
     async def metrics():

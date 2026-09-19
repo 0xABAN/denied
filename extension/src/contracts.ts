@@ -22,7 +22,7 @@ export type Decision = { id: string; revision: number; ad_score: number; unsafe_
 export type Removal = {
   document_id: string; target_id: string; revision: number;
   removed_text: string; text_truncated: boolean;
-  detected_at: string; removed_at: string; total_ms: number;
+  date: string; total_ms: number;
   passages: { receipt: string; text: string }[];
 };
 export type Judgments = { document_id: string; policy_version: string; results: Decision[] };

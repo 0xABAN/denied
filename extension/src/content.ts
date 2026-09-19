@@ -5,7 +5,7 @@ import { clearHighlights, highlight, notify, removeElement } from "./effects";
 type Target = {
   id: string; revision: number; fingerprint: string; value: Evidence; parts: string[];
   next: number; results: (Decision & { text: string })[]; attempts: number; retryAt: number;
-  detectedAt: string; detectedTick: number;
+  detectedTick: number;
   state: "pending" | "checking" | "checked" | "animating" | "failed";
 };
 const documentId = Array.from(crypto.getRandomValues(new Uint32Array(4))).join("-");
@@ -80,7 +80,7 @@ function collect(): void {
     if (previous?.fingerprint === fingerprint) continue;
     records.set(el, { id: previous?.id || String(++sequence), revision: (previous?.revision || 0) + 1,
       fingerprint, value, parts: passages(value.text), next: 0, results: [], attempts: 0, retryAt: 0, state: "pending",
-      detectedAt: new Date().toISOString(), detectedTick: performance.now() });
+      detectedTick: performance.now() });
   }
 }
 
@@ -110,13 +110,13 @@ async function apply(el: HTMLElement, target: Target, epoch: number, url: string
       const removal: Removal = {
         document_id: documentId, target_id: target.id, revision: target.revision,
         removed_text: target.value.text, text_truncated: target.value.text_truncated,
-        detected_at: target.detectedAt, removed_at: new Date().toISOString(),
+        date: new Date().toISOString(),
         total_ms: Math.round(performance.now() - target.detectedTick),
         passages: signed.map(hit => ({ receipt: hit.receipt!, text: hit.text })),
       };
       void chrome.runtime.sendMessage({ type: "removal", removal }).then(response => {
-        if (response?.error && generation === epoch) recordingError = "Removal history unavailable; filtering remains active";
-      }).catch(() => { if (generation === epoch) recordingError = "Removal history unavailable; filtering remains active"; });
+        if (response?.error && generation === epoch) recordingError = "History unavailable; filtering remains active";
+      }).catch(() => { if (generation === epoch) recordingError = "History unavailable; filtering remains active"; });
     }
     counts.total++;
     for (const reason of result.reasons) counts[reason]++;

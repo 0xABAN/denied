@@ -37,7 +37,7 @@ async function check(): Promise<void> {
   show("service-status", "Checking API…");
   try {
     const result = await send({ type: "health" });
-    const history = result.recording_error || `removal history ${result.recording_enabled ? "on" : "off"}`;
+    const history = result.recording_error || `judgment/removal history ${result.recording_enabled ? "on" : "off"}`;
     show("service-status", result.configured ? `API ready · ${history}` : "API connected; set TYPESAFE_API_KEY.");
   } catch { show("service-status", "API unavailable. Start the Python backend and check the origin."); }
 }

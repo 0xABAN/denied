@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium, type BrowserContext } from "playwright";
-import type { PageStats, Removal } from "../extension/src/contracts";
+import type { Batch, Judgments, PageStats, Removal } from "../extension/src/contracts";
 import { localAPI, until } from "./api";
 
 const token = Bun.env.BACKEND_API_TOKEN;
@@ -18,6 +18,8 @@ const SCAM = "Your bank account will be deleted in ten minutes. Reply with your 
 let api: Awaited<ReturnType<typeof localAPI>> | undefined;
 let context: BrowserContext | undefined;
 const reports: Removal[] = [];
+const evaluated: { batch: Batch; result: Judgments }[] = [];
+let captureFailed = false;
 
 async function query(path: string) {
   const response = await fetch(`${api!.url}${path}`, { headers: { "X-Backend-Token": token! } });
@@ -25,18 +27,52 @@ async function query(path: string) {
   return response.json();
 }
 async function rows(): Promise<any[]> { return (await query("/removals?limit=100")).items; }
+async function judgments(): Promise<any[]> { return (await query("/judgments?limit=100")).items; }
+function singleDate(row: any) {
+  assert(Number.isFinite(Date.parse(row.date)));
+  assert(!/"(?:detected_at|judged_at|removed_at|recorded_at)"/.test(JSON.stringify(row)), "Legacy timestamp field remained");
+}
+
+async function database(action: "legacy" | "cleanup") {
+  // All schema-changing checks are confined to this run's disposable namespace.
+  const process = Bun.spawn(["uv", "run", "--env-file", ".env", "python", "-c", `
+import os, re, sys
+from psycopg import sql
+from denied.telemetry import connect, table
+name = os.environ['DENIED_DB_SCHEMA']
+assert re.fullmatch(r'denied_test_[a-f0-9]{32}', name)
+with connect() as connection:
+    if sys.argv[1] == 'legacy':
+        # Exercise migration using real removal rows, not substituted judgments.
+        connection.execute(sql.SQL('''
+            ALTER TABLE {table} RENAME COLUMN date TO removed_at;
+            ALTER TABLE {table} ADD COLUMN detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                               ADD COLUMN judged_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                               ADD COLUMN recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+            UPDATE {table} SET classifications = (
+                SELECT jsonb_agg(item || jsonb_build_object('judged_at', judged_at))
+                FROM jsonb_array_elements(classifications) AS item
+            );
+        ''').format(table=table()))
+    else:
+        connection.execute(sql.SQL('DROP SCHEMA IF EXISTS {} CASCADE').format(sql.Identifier(name)))
+`, action], { cwd: resolve("backend"), env: { ...Bun.env, DENIED_DB_SCHEMA: schema }, stdout: "ignore", stderr: "ignore" });
+  assert.equal(await process.exited, 0, `Database ${action} failed in test schema ${schema}`);
+}
 async function post(value: unknown) {
   return fetch(`${api!.url}/outcomes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value) });
 }
 
 try {
-  api = await localAPI({ DENIED_DB_SCHEMA: schema, DENIED_RECORD_REMOVALS: "1" });
+  api = await localAPI({ DENIED_DB_SCHEMA: schema, DENIED_RECORD_HISTORY: "1" });
   const health = await fetch(`${api.url}/health`).then(r => r.json());
   assert.equal(health.recording_enabled, true);
   assert.equal(health.recording_error, null, "Real database initialization failed");
   assert.equal((await fetch(`${api.url}/removals`)).status, 401);
   assert.equal((await fetch(`${api.url}/metrics`)).status, 401);
+  assert.equal((await fetch(`${api.url}/judgments`)).status, 401);
   assert.equal((await rows()).length, 0);
+  assert.equal((await judgments()).length, 0);
 
   context = await chromium.launchPersistentContext(profile, {
     channel: "chromium", headless: true, viewport: { width: 1100, height: 900 },
@@ -45,6 +81,11 @@ try {
   });
   context.on("request", request => {
     if (request.url() === `${api!.url}/outcomes`) reports.push(request.postDataJSON());
+  });
+  context.on("response", async response => {
+    if (response.url() !== `${api!.url}/judge` || response.status() !== 200) return;
+    try { evaluated.push({ batch: response.request().postDataJSON(), result: await response.json() }); }
+    catch { captureFailed = true; }
   });
   const worker = context.serviceWorkers()[0] || await context.waitForEvent("serviceworker");
   const extensionId = new URL(worker.url()).host;
@@ -78,11 +119,39 @@ try {
     assert.equal(row.page_host, "127.0.0.1");
     assert.equal(row.page_scheme, "http");
     assert(row.total_ms >= 1200 && row.judge_ms >= 0);
-    for (const field of ["recorded_at", "detected_at", "judged_at", "removed_at"]) assert(Number.isFinite(Date.parse(row[field])));
+    singleDate(row);
     assert(row.classifications.every((item: any) => item.remove && item.model_version === "jev-latest" && item.policy_version === "5"));
     assert(!("receipt" in row.classifications[0]));
   }
-  console.log("PASS: actual removals, passage scores, timestamps and latency persist in Tiger; inputs stay excluded");
+  console.log("PASS: actual removals, passage scores, a single date and latency persist in Tiger; inputs stay excluded");
+
+  await until(async () => (await stats()).pending === 0, "initial judgments settled");
+  assert(evaluated.length > 0 && !captureFailed);
+  const expectedCount = evaluated.reduce((sum, item) => sum + item.batch.candidates.length, 0);
+  await until(async () => (await judgments()).length === expectedCount, "every judged passage persisted");
+  const saved = await judgments();
+  assert(saved.some(row => row.decision === "keep"));
+  assert(saved.some(row => row.decision === "remove"));
+  assert(!JSON.stringify(saved).includes("DO_NOT_SEND"));
+  for (const { batch, result } of evaluated) {
+    for (const candidate of batch.candidates) {
+      const row = saved.find(row => row.document_id === batch.document_id && row.candidate_id === candidate.id && row.revision === candidate.revision);
+      const decision = result.results.find(item => item.id === candidate.id)!;
+      assert(row && row.text === candidate.text);
+      assert.equal(row.ad_score, decision.ad_score);
+      assert.equal(row.unsafe_score, decision.unsafe_score);
+      assert.equal(row.decision, decision.remove ? "remove" : "keep");
+      assert(JSON.stringify(row.links) === JSON.stringify(candidate.links));
+      assert.equal(row.page_host, batch.page_host);
+      assert.equal(row.policy_version, result.policy_version);
+      assert.equal(row.model_version, "jev-latest");
+      singleDate(row);
+    }
+  }
+  const kept = (await query("/judgments?decision=keep&limit=100")).items;
+  assert(kept.length > 0 && kept.every((row: any) => row.decision === "keep"));
+  assert.equal((await query("/metrics")).total_judgments, expectedCount);
+  console.log("PASS: every kept and flagged passage matches the actual API judgment; kept cases are queryable");
 
   assert(reports.length >= 2);
   assert.equal((await post(reports[0])).status, 200);
@@ -101,6 +170,7 @@ try {
   await add("history-highlight", SCAM);
   await page.waitForSelector("#history-highlight [data-denied-ui]");
   assert.equal((await rows()).length, 2, "Highlighting was counted as removal");
+  await until(async () => (await judgments()).filter(row => row.text === SCAM).length >= 2, "highlight judgment recorded without a removal");
   await page.locator("#history-highlight").evaluate(el => el.remove());
   await popup.locator("#mode").selectOption("remove");
   await page.bringToFront();
@@ -110,6 +180,7 @@ try {
   await until(async () => (await stats()).pending === 0, "changed target rechecked");
   assert.equal(await page.locator("#history-stale").count(), 1);
   assert.equal((await rows()).length, 2, "A canceled removal was recorded");
+  await until(async () => (await judgments()).some(row => row.text === "The library reading group meets on Saturday." && row.decision === "keep"), "revised benign judgment recorded");
   console.log("PASS: highlights and stale/canceled decisions do not create removal records");
 
   await add("history-both", "Sponsored. Join our online casino and place real-money bets to win cash prizes.");
@@ -120,10 +191,22 @@ try {
   assert.equal(metrics.total_removals, 3);
   assert.equal(metrics.advertising, 2);
   assert.equal(metrics.unsafe_content, 2);
+  const beforeMigration = await rows();
+  const judgmentsBeforeRestart = (await judgments()).length;
   await api.stop();
+  await database("legacy");
   await api.start();
-  assert.equal((await rows()).length, 3, "Records did not survive process restart");
-  console.log("PASS: a dual classification produces one row; aggregate metrics and restart persistence match Tiger data");
+  const migrated = await rows();
+  assert.equal(migrated.length, 3, "Records did not survive migration/restart");
+  for (const row of migrated) {
+    singleDate(row);
+    const previous = beforeMigration.find(previous => previous.event_id === row.event_id)!;
+    assert.equal(row.date, previous.date);
+    assert.equal(row.removed_text, previous.removed_text);
+    assert(JSON.stringify(row.classifications) === JSON.stringify(previous.classifications));
+  }
+  assert.equal((await judgments()).length, judgmentsBeforeRestart);
+  console.log("PASS: dual classifications count once; legacy dates migrate without losing content, scores, or judgment history");
 
   // Use a real refused TCP connection, not a substituted database client.
   const reservation = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("") });
@@ -146,16 +229,6 @@ try {
   site.stop(true);
   await api?.stop();
   await rm(profile, { recursive: true, force: true });
-  // Delete only this run's namespace. Never delete from the user's production schema.
-  const cleanup = Bun.spawn(["uv", "run", "--env-file", ".env", "python", "-c", `
-import os, re
-from psycopg import sql
-from denied.telemetry import connect
-name = os.environ['DENIED_DB_SCHEMA']
-assert re.fullmatch(r'denied_test_[a-f0-9]{32}', name)
-with connect() as connection:
-    connection.execute(sql.SQL('DROP SCHEMA IF EXISTS {} CASCADE').format(sql.Identifier(name)))
-`], { cwd: resolve("backend"), env: { ...Bun.env, DENIED_DB_SCHEMA: schema }, stdout: "ignore", stderr: "ignore" });
-  assert.equal(await cleanup.exited, 0, `Could not clean test schema ${schema}`);
+  await database("cleanup");
 }
 console.log("Real Tiger Data integration checks passed; disposable schema removed.");
