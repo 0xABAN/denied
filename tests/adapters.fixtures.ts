@@ -2,7 +2,7 @@
  * Marker provenance and access limitations are listed in docs/adapters.md.
  * Text, identities, URLs and media are synthetic; no private browsing data.
  */
-export const adapterFixtures = [
+export const adapterFixtures = ([
   { site: "youtube", url: "https://www.youtube.com/results?search_query=nature", container: "div",
     item: '<ytd-video-renderer data-fixture="$id"><a href="/watch?v=$id"><img alt="Preview"></a><h3><a class="probe" href="/watch?v=$id">$text</a></h3><span>Example channel</span><button>Actions</button></ytd-video-renderer>' },
   { site: "amazon", url: "https://www.amazon.com/s?k=notebook", container: "div",
@@ -55,7 +55,7 @@ export const adapterFixtures = [
     item: '<div class="adn" data-legacy-message-id="$id" data-fixture="$id"><img alt="Avatar"><b class="gD">Example sender</b><div class="ii gt"><div class="a3s probe">$text</div></div><button>Actions</button></div>' },
   { site: "outlook", url: "https://outlook.live.com/mail/0/inbox/id/example", container: 'div data-app-section="ConversationContainer"',
     item: '<div data-item-id="$id" data-fixture="$id"><span data-testid="SenderPersona">Example sender</span><div aria-label="Message body" class="probe">$text</div><button>Actions</button></div>' },
-] as const;
+] as const).filter(fixture => fixture.site !== "pinterest"); // Keep the fixture while its adapter is disabled.
 
 export function fixturePage(fixture: typeof adapterFixtures[number]): string {
   const item = (id: string, text: string) => fixture.item.replaceAll("$id", id).replaceAll("$text", text);

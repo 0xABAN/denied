@@ -58,6 +58,24 @@ try {
     assert.deepEqual(removed, { result: true, target: false, neighbor: true, composer: true, navigation: true }, fixture.site);
   }
 
+  await page.setContent('<div data-test-id="pinWrapper"><a href="/pin/example"><span>Example pin text</span></a></div>');
+  for (const host of ["pinterest.com", "www.pinterest.com"]) {
+    const fallback = await page.evaluate(host => {
+      const url = new URL(`https://${host}/`);
+      const api = (window as any).adapters;
+      const scan = (window as any).scan;
+      const pin = document.querySelector('[data-test-id="pinWrapper"]')!;
+      const candidates = scan.discover(document.body, undefined, url);
+      return {
+        adapter: api.adapterFor(url)?.id ?? null,
+        scope: api.ownership(pin, url),
+        text: candidates.map((el: HTMLElement) => scan.evidence(el, url).text).join(" "),
+      };
+    }, host);
+    assert.deepEqual(fallback, { adapter: null, scope: null, text: "Example pin text" },
+      "Pinterest must use generic discovery, not its disabled adapter");
+  }
+
   const declaredRules = await page.evaluate(() => (window as any).adapters.adapters.flatMap((adapter: any) =>
     adapter.rules.map((_: unknown, index: number) => `${adapter.id}:${index}`)));
   const testedRules = [...adapterFixtures.map(fixture => `${fixture.site}:0`),

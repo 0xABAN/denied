@@ -9,7 +9,6 @@ import { facebook } from "./facebook";
 import { instagram } from "./instagram";
 import { tiktok } from "./tiktok";
 import { twitch } from "./twitch";
-import { pinterest } from "./pinterest";
 import { linkedin } from "./linkedin";
 import { threads } from "./threads";
 import { bluesky } from "./bluesky";
@@ -28,8 +27,9 @@ import { gmail } from "./gmail";
 import { outlook } from "./outlook";
 
 export type { ItemScope, SiteAdapter } from "./types";
+// Pinterest is temporarily unregistered; keep pinterest.ts for re-enabling.
 export const adapters: readonly SiteAdapter[] = [youtube, amazon, x, groupme, reddit, facebook, instagram,
-  tiktok, twitch, pinterest, linkedin, threads, bluesky, ebay, etsy, walmart, aliexpress, discord,
+  tiktok, twitch, linkedin, threads, bluesky, ebay, etsy, walmart, aliexpress, discord,
   whatsapp, telegram, slack, google, bing, duckduckgo, gmail, outlook];
 
 // Preserve drafts and editable form state, not an item's playback/action

@@ -56,7 +56,7 @@ The independent `violent_entity_score` uses the existing `DENIED_SAFETY_THRESHOL
 
 ## Whole-item site adapters
 
-Adapters for 26 web apps—including YouTube, Amazon, X, GroupMe, Gmail and Outlook—associate evidence with a complete item before classification. A post's sponsorship badge can remove the post, not just the badge. A video title can remove its card or the associated watch-page regions. Opened emails are individual targets; inbox rows representing whole conversations are not expanded into thread removals.
+Adapters for 25 web apps—including YouTube, Amazon, X, GroupMe, Gmail and Outlook—associate evidence with a complete item before classification. Pinterest's adapter is temporarily disabled; its code is retained, and Pinterest uses generic filtering. A post's sponsorship badge can remove the post, not just the badge. A video title can remove its card or the associated watch-page regions. Opened emails are individual targets; inbox rows representing whole conversations are not expanded into thread removals.
 
 Adapters do not change Jev policy or thresholds. Ordinary sales offers remain advertising under that policy, so commerce sites can lose many product listings. No site-specific keyword rules decide what gets blocked.
 

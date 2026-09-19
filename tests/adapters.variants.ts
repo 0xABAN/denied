@@ -1,5 +1,5 @@
 /** Additional rule shapes. These are synthetic contracts, not live captures. */
-export const adapterVariants = [
+export const adapterVariants = ([
   { site: "youtube", rule: 1, html: '<ytd-reel-video-renderer data-fixture="extra"><video></video><p>Video description</p><ytd-comments data-retain>KEEP_INTERNAL</ytd-comments></ytd-reel-video-renderer>' },
   { site: "youtube", rule: 2, html: '<ytd-comment-view-model data-fixture="extra"><img alt="Avatar"><b>Author</b><div id="content-text">Comment body</div></ytd-comment-view-model>' },
   { site: "youtube", rule: 3, html: '<ytd-watch-flexy data-fixture="extra"><div id="player-container-outer"><video></video></div><ytd-watch-metadata><div id="above-the-fold"><div id="title"><h1>Video title</h1></div></div><div id="description">Description</div></ytd-watch-metadata><div id="comments" data-retain><p id="above-the-fold" data-retain>KEEP_INTERNAL</p></div><div id="related" data-retain><p id="above-the-fold" data-retain>KEEP_INTERNAL</p></div></ytd-watch-flexy>' },
@@ -18,4 +18,4 @@ export const adapterVariants = [
   { site: "ebay", rule: 2, html: '<main id="mainContent" data-fixture="extra"><div class="ux-image-carousel-container"><img alt="Product"></div><h1 class="x-item-title">Product title</h1><div class="x-buybox"><button>Purchase controls</button></div><div class="x-ratings-reviews" data-retain>KEEP_INTERNAL</div></main>' },
   { site: "aliexpress", rule: 1, html: '<a class="search-card-item" data-fixture="extra" href="/item/example"><img alt="Product"><h3>Product title</h3><p>Description</p></a>' },
   { site: "telegram", rule: 1, url: "https://web.telegram.org/k/", html: '<div id="column-center"><div class="bubble" data-mid="example" data-fixture="extra"><div class="message">Message body</div><button>Actions</button></div></div>' },
-] as const;
+] as const).filter(variant => variant.site !== "pinterest"); // Keep the fixture while its adapter is disabled.

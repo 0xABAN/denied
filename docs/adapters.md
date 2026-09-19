@@ -4,6 +4,8 @@ Adapters identify the item that supplied evidence. They do not classify content,
 
 All effects are browser-local DOM changes. Never click a site's delete/archive controls, call account APIs, read drafts, fetch attachments, or collect full-page dumps. Visible chat and email text follows the existing backend/Jev and optional judgment-history path.
 
+Pinterest's adapter is temporarily disabled: 25 adapters remain enabled. Its module and fixtures are retained for re-enabling. Pinterest uses generic filtering, not a site exemption.
+
 ## Ownership definitions
 
 The target is an individual item, never its collection. Main item presentations may span several DOM regions. Replies, reviews, recommendations, composers and shared identity remain independent. Inbox rows that summarize a conversation are not individual emails; mail adapters must not expand them into thread removals.
@@ -66,7 +68,7 @@ These are evidence for selectors and relationships, not guarantees of current si
 
 ## Implemented-layout matrix
 
-Desktop web only. **Every row below has a controlled, synthetic browser fixture and real extension → FastAPI → Jev integration check. None is a blanket live-removal certification.** The browser checks exercise 44 declared rule shapes; they do not exhaust every selector alternative, locale or experiment.
+Desktop web only. **Every enabled row below has a controlled, synthetic browser fixture and real extension → FastAPI → Jev integration check. None is a blanket live-removal certification.** The browser checks exercise 42 enabled rule shapes; they do not exhaust every selector alternative, locale or experiment.
 
 The later public survey found accepted item boundaries for YouTube search, Threads, Bluesky and Bing. A separate YouTube watch-page inspection confirmed player/metadata regions without overlap with comments or recommendations. Amazon and TikTok supplied structural observations earlier, but did not expose accepted scopes in the final unauthenticated survey. All other rows remain source/fixture-tested or provisional, not live-verified.
 
@@ -81,7 +83,7 @@ The later public survey found accepted item boundaries for YouTube search, Threa
 | Instagram | Individual `article` presentations | Standalone comments/Reels not explicitly mapped. |
 | TikTok | Explore/profile video cards and recommendation-list player units | Explore markup observed earlier; other feeds/comments unverified. |
 | Twitch | Preview-card articles; chat messages; named player/channel-info regions | Directory category cards are not stream cards; signed-in/player variants unverified. |
-| Pinterest | Pin wrappers and closeup presentation | Public ideas page did not verify these specific units. |
+| Pinterest (disabled) | Pin wrappers and closeup presentation; module retained but not registered | Generic filtering only for now. Public ideas page did not verify these specific units. |
 | LinkedIn | Feed updates and comment-item wrappers | Authenticated variants unverified. |
 | Threads | Individual post containers associated with post links | Public post boundaries observed; authenticated/reply variants unverified. |
 | Bluesky | Feed-item and post-thread-item wrappers | Public profile feed boundaries observed; thread variants unverified. |
@@ -101,8 +103,8 @@ The later public survey found accepted item boundaries for YouTube search, Threa
 
 ## Verification and safety limits
 
-- `bun run build && bun run test:adapters`: 26 site fixtures through the real built extension/backend/provider, including a title-only Black Ops 7 video and a badge-only X ad; one kept neighbor and one logical removal per fixture. The additional watch-page case verifies a paused native player, disjoint removal, preserved comments/recommendations and one logical count. Provider failures fail the test; responses are not substituted. Browser-only hostname mapping points explicitly synthetic pages at an actual local HTTPS fixture server.
-- The structural browser tests cover all 44 declared rule shapes, private fields, editable drafts, owned action controls, shared sender identity, independent replies, deceptive hostname rejection and text-only link identity changes. They also cover repeated part IDs inside protected regions and synchronous custom-element mutations between deletions.
+- `bun run build && bun run test:adapters`: 25 enabled site fixtures through the real built extension/backend/provider, including a title-only Black Ops 7 video and a badge-only X ad; one kept neighbor and one logical removal per fixture. The additional watch-page case verifies a paused native player, disjoint removal, preserved comments/recommendations and one logical count. Provider failures fail the test; responses are not substituted. Browser-only hostname mapping points explicitly synthetic pages at an actual local HTTPS fixture server.
+- The structural browser tests verify Pinterest falls back to generic discovery and cover all 42 enabled rule shapes, private fields, editable drafts, owned action controls, shared sender identity, independent replies, deceptive hostname rejection and text-only link identity changes. They also cover repeated part IDs inside protected regions and synchronous custom-element mutations between deletions.
 - `bun run observe:adapters` is a **read-only coverage survey**, not a passing support test. It reports loaded-but-unmatched, redirected and inaccessible layouts separately in the ignored `artifacts/adapters-live.json`; it samples at most 30 visible matches per rule. It performs no inference or removals and uses no signed-in profile. A missing match is not silently counted as support.
 - Shared identity is kept while a following headerless message can depend on it. Uncertain/empty shared header shells may remain. The implementation does not detach and rebuild surviving conversations.
 - Whole-root items use the existing guarded motion renderer. Multi-region items deliberately skip animation and use a synchronous guarded commit. If a site's custom-element callback changes a later region, deletion stops; a partial operation is not counted or reported as a complete removal. There is no unsafe rollback that resurrects stale DOM.
