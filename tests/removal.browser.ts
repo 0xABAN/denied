@@ -45,34 +45,17 @@ try {
   await setup();
   const originalNeighbor = await page.locator("#neighbor").boundingBox();
   const effectStarted = performance.now();
-  const blink = await page.evaluate(() => {
+  const outlineInvariant = await page.evaluate(() => {
     const element = document.getElementById("target-0")!;
     element.style.outline = "1px solid rgb(17, 34, 51)";
     const originalStyle = element.getAttribute("style");
     void (window as any).start("target-0");
-    const flash = element.getAnimations().find(animation =>
+    const hasOutlineAnimation = element.getAnimations().some(animation =>
       (animation.effect as KeyframeEffect).getKeyframes().some(frame => "outlineColor" in frame || "outline" in frame));
-    if (!flash) return null;
-
-    // Sample the real browser animation clock rather than relying on sleeps to
-    // land inside a 54ms flash. Resume it afterward for the full choreography.
-    flash.pause();
-    const colors = [20, 70, 110, 160, 200].map(time => {
-      flash.currentTime = time;
-      return getComputedStyle(element).outlineColor;
-    });
-    const timing = flash.effect!.getTiming();
-    flash.currentTime = 0;
-    flash.play();
-    return { colors, timing, unchanged: originalStyle === element.getAttribute("style") };
+    return { hasOutlineAnimation, unchanged: originalStyle === element.getAttribute("style") };
   });
-  assert(blink, "The targeted section must receive a quick white-outline double-blink");
-  assert.equal(blink.timing.iterations, 2, "Blink exactly twice, never loop indefinitely");
-  assert.equal(blink.timing.duration, 90, "Both blinks must finish in 180ms without delaying the spin");
-  // Chromium normalizes fully transparent animated colors to transparent black.
-  assert.deepEqual(blink.colors, ["rgb(255, 255, 255)", "rgba(0, 0, 0, 0)",
-    "rgb(255, 255, 255)", "rgba(0, 0, 0, 0)", "rgb(17, 34, 51)"]);
-  assert(blink.unchanged, "The flash must not mutate the host's inline outline");
+  assert(!outlineInvariant.hasOutlineAnimation, "Removal motion must not add a white-outline animation");
+  assert(outlineInvariant.unchanged, "Removal motion must not mutate the host's inline outline");
   await page.waitForTimeout(220);
   const winding = await page.locator("#target-0").evaluate(element => {
     const glint = document.querySelector<HTMLElement>('[data-denied-ui="glint"]');
@@ -153,7 +136,7 @@ try {
   assert.equal(await page.locator("#neighbor").count(), 1);
   await page.waitForFunction(() => !document.querySelector("canvas[data-denied-ui]"));
   assert(performance.now() - effectStarted < 1450, "The explosion must finish promptly after the spin");
-  console.log("PASS: fast white double-blink, accelerating Y-axis spin, glass glint, explosion and cleanup");
+  console.log("PASS: clean accelerating Y-axis spin, glass glint, explosion and cleanup");
 
   await setup();
   await page.locator("#target-0").evaluate(element => {
@@ -222,7 +205,7 @@ try {
   });
   assert(!canceled.removed && canceled.connected);
   assert.equal(canceled.before, canceled.after);
-  assert.equal(canceled.outline, "rgb(17, 34, 51)", "Canceling a blink must restore the original outline");
+  assert.equal(canceled.outline, "rgb(17, 34, 51)", "Canceling removal motion must preserve the original outline");
   assert.equal(canceled.animations, 0);
   assert.equal(canceled.layers, 0);
   console.log("PASS: changing content cancels the effect without corrupting host styles");

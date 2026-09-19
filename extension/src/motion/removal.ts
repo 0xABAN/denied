@@ -3,7 +3,6 @@ import { prepareBurst, type Burst } from "./burst";
 import { createGlint } from "./glint";
 
 const SPIN_MS = 700;
-const BLINK_MS = 90;
 const PEAK_SCALE = .86;
 const SETTLE_MS = 250;
 const EASE_OUT = "cubic-bezier(.22,1,.36,1)";
@@ -68,26 +67,12 @@ export function removeWithMotion(element: HTMLElement, settings: Settings, curre
     void (async () => {
       try {
         burst = prepareBurst(element, PEAK_SCALE);
-        // Two crisp outline-only flashes overlap the slow start of the spin,
-        // adding no removal delay. No fill leaves the host's own outline intact.
-        const blink = element.animate([
-          { outlineColor: "#fff", offset: 0 },
-          { outlineColor: "rgba(255,255,255,0)", offset: .6 },
-          { outlineColor: "rgba(255,255,255,0)", offset: 1 },
-        ].map(frame => ({ ...frame, outlineWidth: "3px", outlineStyle: "solid", outlineOffset: "2px", easing: "steps(1, end)" })),
-        { duration: BLINK_MS, iterations: 2 });
-        animations.push(blink);
-
         // Equal-time samples of an accelerating angle keep the last revolution
-        // fastest. Ending at a whole turn aligns the fragment atlas at handoff.
-        // Y rotation brings the side edge toward the viewer, turning left-right.
-        // Width now determines depth, so wide cards stay behind the near plane.
+        // fastest. The original card stays clean—no white outline is added.
+        // Ending at a whole turn aligns the fragment atlas at handoff.
         const perspective = Math.max(420, box.width * 2.2);
         const frames = Array.from({ length: 25 }, (_, index) => {
           const t = index / 24;
-          // Increase the frequency and amplitude together. Apply the shake in
-          // screen space, before the Y turn, so it stays visible edge-on too.
-          // The final sample is centered for an exact handoff to the shard atlas.
           const phase = Math.PI * 2 * (2 * t + 3 * t * t);
           const amplitude = index === 24 ? 0 : t ** .8;
           const x = (Math.sin(phase) * 18 * amplitude).toFixed(3);
