@@ -1,5 +1,22 @@
 /** Additional rule shapes. These are synthetic contracts, not live captures. */
 export const adapterVariants = ([
+  // Search-side watch cards use formatted strings, not ordinary video headings.
+  { site: "youtube", rule: 0, renderer: "ytd-watch-card-compact-video-renderer", html: `<section>
+    <ytd-watch-card-compact-video-renderer data-fixture="extra">
+      <ytd-thumbnail><a href="/watch?v=compact"><img alt=""><span>0:51</span></a></ytd-thumbnail>
+      <div><a href="/watch?v=compact"><yt-formatted-string>Season 04 BlackCell Trailer | Black Ops 7</yt-formatted-string></a>
+        <yt-formatted-string>Example channel</yt-formatted-string><yt-formatted-string>38K views · 3 months ago</yt-formatted-string></div>
+    </ytd-watch-card-compact-video-renderer>
+    <ytd-watch-card-compact-video-renderer data-retain><a href="/watch?v=neighbor"><img alt="KEEP_NEIGHBOR">KEEP_NEIGHBOR</a></ytd-watch-card-compact-video-renderer>
+    <button data-retain>KEEP_VIEW_ALL</button></section>` },
+  { site: "youtube", rule: 0, renderer: "ytd-watch-card-hero-video-renderer", html: `<section>
+    <ytd-watch-card-hero-video-renderer data-fixture="extra"><div id="watch-card-endpoint">
+      <ytd-thumbnail><a href="/watch?v=hero"></a></ytd-thumbnail><div id="hero-image"><img alt=""></div>
+      <a href="/watch?v=hero"><yt-formatted-string id="watch-card-title">Dev Talk - Season 06 Update | Call of Duty: Black Ops 7</yt-formatted-string></a>
+      <yt-formatted-string id="watch-card-subtitle">Example channel · 113K views · 3 days ago</yt-formatted-string>
+    </div></ytd-watch-card-hero-video-renderer>
+    <ytd-watch-card-compact-video-renderer data-retain><a href="/watch?v=neighbor"><img alt="KEEP_NEIGHBOR">KEEP_NEIGHBOR</a></ytd-watch-card-compact-video-renderer>
+    <button data-retain>KEEP_VIEW_ALL</button></section>` },
   { site: "youtube", rule: 1, html: '<ytd-reel-video-renderer data-fixture="extra"><video></video><p>Video description</p><ytd-comments data-retain>KEEP_INTERNAL</ytd-comments></ytd-reel-video-renderer>' },
   { site: "youtube", rule: 2, html: '<ytd-comment-view-model data-fixture="extra"><img alt="Avatar"><b>Author</b><div id="content-text">Comment body</div></ytd-comment-view-model>' },
   { site: "youtube", rule: 3, html: '<ytd-watch-flexy data-fixture="extra"><div id="player-container-outer"><video></video></div><ytd-watch-metadata><div id="above-the-fold"><div id="title"><h1>Video title</h1></div></div><div id="description">Description</div></ytd-watch-metadata><div id="comments" data-retain><p id="above-the-fold" data-retain>KEEP_INTERNAL</p></div><div id="related" data-retain><p id="above-the-fold" data-retain>KEEP_INTERNAL</p></div></ytd-watch-flexy>' },

@@ -10,6 +10,7 @@ import { join, resolve } from "node:path";
 import { chromium } from "playwright";
 import { judgmentsFrom, type Batch, type Judgments, type PageStats } from "../extension/src/contracts";
 import { adapterFixtures, fixturePage } from "./adapters.fixtures";
+import { adapterVariants } from "./adapters.variants";
 import { localAPI, until } from "./api";
 import { observeJudgments } from "./observe-judgments";
 
@@ -27,6 +28,7 @@ const observer = observeJudgments(api.url, batch => {
   return record;
 }, (record, status, result) => Object.assign(record, { status, result }));
 let localRequests = 0;
+const watchCards = adapterVariants.filter(variant => "renderer" in variant);
 const watch = `<!doctype html><html><head><title>denied adapter fixture</title><style>
   ytd-watch-flexy {display:block} video {width:240px;height:120px}
   </style></head><body><nav id="navigation">Navigation</nav><ytd-watch-flexy id="watch">
@@ -46,6 +48,14 @@ const site = Bun.serve({ hostname: "127.0.0.1", port: 0, tls: { key: Bun.file(ke
   let html = fixture.site === "youtube" && url.pathname === "/watch" ? watch : fixturePage(fixture);
   // No graphic wording: entity knowledge must identify this complete video card.
   if (fixture.site === "youtube" && url.pathname !== "/watch") html = html.replace("Tickets for sale. Send me a message to buy them for $40.", "Black Ops 7");
+  const watchCard = watchCards.find(variant => variant.renderer === url.searchParams.get("watch_card"));
+  if (fixture.site === "youtube" && watchCard) {
+    html = `<!doctype html><title>denied adapter fixture</title>
+      <style>[data-fixture],[data-retain] { display:block } img { width:120px;height:70px }</style>
+      <nav id="navigation">Navigation</nav>
+      ${watchCard.html.replaceAll("KEEP_NEIGHBOR", "The school garden has flowers and butterflies.").replaceAll("KEEP_VIEW_ALL", "View all")}
+      <form id="composer"><textarea>DO_NOT_SEND_DRAFT</textarea></form>`;
+  }
   // The tiny badge, not a sales pitch in the body, must identify the whole X post.
   if (fixture.site === "x") html = html.replace("Tickets for sale. Send me a message to buy them for $40.", "The school garden has flowers and butterflies.");
   return new Response(html, { headers: { "Content-Type": "text/html" } });
@@ -103,6 +113,21 @@ try {
       }
     }
     console.log(`PASS: ${fixture.site} synthetic layout, real provider, whole item removed and neighbor preserved`);
+  }
+
+  for (const variant of watchCards) {
+    const url = new URL("https://www.youtube.com/results");
+    url.searchParams.set("watch_card", variant.renderer);
+    const stats = await navigate(url);
+    await until(async () => await page.locator('[data-fixture="extra"]').count() === 0,
+      `${variant.renderer}: title and thumbnail removed together by real Jev`, 30000);
+    await until(async () => (await stats()).pending === 0, `${variant.renderer}: judgments settled`);
+    assert.equal(await page.locator('[data-retain] img').count(), 1, "Neighboring video thumbnail must remain");
+    assert.equal(await page.locator('button[data-retain]').textContent(), "View all");
+    for (const id of ["navigation", "composer"]) assert.equal(await page.locator(`#${id}`).count(), 1);
+    assert.equal((await stats()).total, 1, "Watch card counts as one logical removal");
+    assert.equal((await stats()).unsafe_content, 1);
+    console.log(`PASS: ${variant.renderer}, real provider, complete card removed and neighboring video preserved`);
   }
 
   const stats = await navigate(new URL("https://www.youtube.com/watch?v=example"));

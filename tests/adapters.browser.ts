@@ -80,7 +80,7 @@ try {
     adapter.rules.map((_: unknown, index: number) => `${adapter.id}:${index}`)));
   const testedRules = [...adapterFixtures.map(fixture => `${fixture.site}:0`),
     ...adapterVariants.map(variant => `${variant.site}:${variant.rule}`)];
-  assert.deepEqual(declaredRules.sort(), testedRules.sort(), "Every declared adapter rule needs a structural fixture");
+  assert.deepEqual(declaredRules.sort(), [...new Set(testedRules)].sort(), "Every declared adapter rule needs a structural fixture");
 
   for (const variant of adapterVariants) {
     const fixture = adapterFixtures.find(item => item.site === variant.site)!;
