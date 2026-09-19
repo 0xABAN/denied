@@ -1,8 +1,10 @@
 import { type Settings } from "../contracts";
 import { prepareBurst, type Burst } from "./burst";
 import { createGlint } from "./glint";
+import { releaseOverflowClips } from "./overflow";
 
-const SPIN_MS = 700;
+const SPIN_MS = 1200;
+const HOLD_MS = 300;
 const PEAK_SCALE = .86;
 const SETTLE_MS = 250;
 const EASE_OUT = "cubic-bezier(.22,1,.36,1)";
@@ -23,6 +25,7 @@ export function removeWithMotion(element: HTMLElement, settings: Settings, curre
     const animations: Animation[] = [];
     let burst: Burst | undefined;
     let stopGlint: (() => void) | undefined;
+    let restoreOverflow: (() => void) | undefined;
     let done = false;
     let fallback: ReturnType<typeof setTimeout>;
     const style = getComputedStyle(element);
@@ -48,6 +51,7 @@ export function removeWithMotion(element: HTMLElement, settings: Settings, curre
       // are canceled; unrelated host animations and new styles are preserved.
       const commit = remove && element.isConnected && current();
       animations.forEach(animation => animation.cancel());
+      restoreOverflow?.();
       if (commit) element.remove();
       else burst?.cancel();
       resolve(commit);
@@ -62,25 +66,26 @@ export function removeWithMotion(element: HTMLElement, settings: Settings, curre
     observer.observe(element, { subtree: true, childList: true, characterData: true, attributes: true });
     document.addEventListener("visibilitychange", hidden);
     reduced.addEventListener("change", motionChanged);
-    fallback = setTimeout(() => { burst?.cancel(); finish(true); }, 1600);
+    fallback = setTimeout(() => { burst?.cancel(); finish(true); }, SPIN_MS + HOLD_MS + SETTLE_MS + 650);
 
     void (async () => {
       try {
+        restoreOverflow = releaseOverflowClips(element);
         burst = prepareBurst(element, PEAK_SCALE);
         // Equal-time samples of an accelerating angle keep the last revolution
-        // fastest. The original card stays clean—no white outline is added.
+        // fastest. The white rim is a separate overlay, never a host-style edit.
         // Ending at a whole turn aligns the fragment atlas at handoff.
         const perspective = Math.max(420, box.width * 2.2);
         const frames = Array.from({ length: 25 }, (_, index) => {
           const t = index / 24;
           const phase = Math.PI * 2 * (2 * t + 3 * t * t);
           const amplitude = index === 24 ? 0 : t ** .8;
-          const x = (Math.sin(phase) * 18 * amplitude).toFixed(3);
+          const x = (Math.sin(phase) * 28 * amplitude).toFixed(3);
           const y = (Math.sin(phase * 1.4) * 8 * amplitude).toFixed(3);
-          const tilt = (Math.sin(phase + .7) * 12 * amplitude).toFixed(3);
+          const tilt = (Math.sin(phase + .7) * 20 * amplitude).toFixed(3);
           return { offset: t,
             transform: `translate3d(${x}px,${y}px,0px) rotateZ(${tilt}deg) ` +
-              `perspective(${perspective}px) rotateY(${-1440 * t ** 2.6}deg) scale(${1 - (1 - PEAK_SCALE) * t * t})` };
+              `perspective(${perspective}px) rotateY(${-2520 * t ** 2.6}deg) scale(${1 - (1 - PEAK_SCALE) * t * t})` };
         });
         stopGlint = createGlint(element, frames, SPIN_MS);
         const spin = element.animate(frames,
@@ -92,10 +97,18 @@ export function removeWithMotion(element: HTMLElement, settings: Settings, curre
         if (done) return;
         if (!current()) return finish(false);
         stopGlint?.();
-        // One phase boundary, not a separate timer: the intact component vanishes
-        // on exactly the frame its shards start moving outward at peak speed.
+        // Keep the spin's final frame intact. An owned animation provides a
+        // cancelable clock, so stale content cannot explode after the hold.
+        const hold = element.animate([{}, {}], { duration: HOLD_MS });
+        animations.push(hold);
+        await hold.finished;
+        if (done) return;
+        if (!current()) return finish(false);
+
+        // Hide the intact component on the same frame its shards appear.
         const hide = element.animate([{ opacity: 0 }, { opacity: 0 }], { duration: 1, fill: "forwards" });
         animations.push(hide);
+        restoreOverflow?.();
         burst?.play();
         if (collapsible) {
           const settle = element.animate([from, to], { duration: SETTLE_MS, easing: EASE_OUT, fill: "forwards" });

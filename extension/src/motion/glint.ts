@@ -1,4 +1,5 @@
 import { OWN } from "../contracts";
+import { isDarkSurface } from "./surface";
 
 const MAX_GLINTS = 4;
 let active = 0;
@@ -12,6 +13,7 @@ export function createGlint(element: HTMLElement, frames: Keyframe[], duration: 
   if (active >= MAX_GLINTS) return;
   const box = element.getBoundingClientRect();
   const style = getComputedStyle(element);
+  const lightSurface = !isDarkSurface(element);
   // A viewport-aligned mirror cannot reconstruct an existing arbitrary host
   // transform. Omit this decoration in that case; the removal still proceeds.
   if (box.width < 2 || box.height < 2 || style.transform !== "none") return;
@@ -28,7 +30,23 @@ export function createGlint(element: HTMLElement, frames: Keyframe[], duration: 
   light.style.cssText = "all:initial;position:absolute;inset:0;pointer-events:none;" +
     "background:linear-gradient(112deg,transparent 32%,rgba(255,255,255,.12) 42%," +
     "rgba(255,255,255,.92) 48%,rgba(255,255,255,.5) 50%,rgba(255,255,255,.1) 57%,transparent 68%);";
+  if (lightSurface) {
+    light.style.background = "linear-gradient(112deg,transparent 32%,rgba(45,45,45,.18) 42%," +
+      "rgba(255,255,255,.92) 48%,rgba(255,255,255,.5) 50%,rgba(45,45,45,.12) 57%,transparent 68%)";
+  }
   layer.append(light);
+
+  // Share the glint's geometry and lifetime, but not its hidden back face:
+  // the second blink must remain visible as the button turns away.
+  const rim = document.createElement("div");
+  rim.setAttribute(OWN, "outline");
+  rim.setAttribute("aria-hidden", "true");
+  rim.style.cssText = layer.style.cssText;
+  rim.style.backfaceVisibility = "visible";
+  rim.style.boxShadow = lightSurface
+    ? "inset 0 0 0 3px white,inset 0 0 0 4px rgba(35,35,35,.5),0 0 0 1px rgba(35,35,35,.4)"
+    : "inset 0 0 0 3px white";
+  rim.style.opacity = "0";
 
   const animations: Animation[] = [];
   const pageX = scrollX;
@@ -46,6 +64,7 @@ export function createGlint(element: HTMLElement, frames: Keyframe[], duration: 
     window.removeEventListener("resize", cancel);
     document.removeEventListener("visibilitychange", cancel);
     layer.remove();
+    rim.remove();
     active--;
   };
   const scrolled = (event: Event) => {
@@ -54,8 +73,16 @@ export function createGlint(element: HTMLElement, frames: Keyframe[], duration: 
   };
 
   try {
-    document.documentElement.append(layer);
+    document.documentElement.append(layer, rim);
     animations.push(layer.animate(frames, { duration, easing: "linear", composite: "add", fill: "forwards" }));
+    animations.push(rim.animate(frames, { duration, easing: "linear", composite: "add", fill: "forwards" }));
+    animations.push(rim.animate([
+      { opacity: 1, offset: 0, easing: "steps(1, end)" },
+      { opacity: 0, offset: .25, easing: "steps(1, end)" },
+      { opacity: 1, offset: .5, easing: "steps(1, end)" },
+      { opacity: 0, offset: .75, easing: "steps(1, end)" },
+      { opacity: 0, offset: 1 },
+    ], { duration: 500, easing: "linear", fill: "both" }));
     animations.push(light.animate([
       { transform: "translateX(-110%)", opacity: 0 },
       { opacity: 1, offset: .12 },

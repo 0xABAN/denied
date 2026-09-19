@@ -42,6 +42,120 @@ async function setup(count = 1) {
 }
 
 try {
+  await setup(2);
+  const overflowCleanup = await page.evaluate(async () => {
+    const outer = document.createElement("div");
+    const inner = document.createElement("div");
+    outer.style.overflow = "clip";
+    inner.style.overflow = "hidden";
+    const targets = [document.getElementById("target-0")!, document.getElementById("target-1")!];
+    targets[0].before(outer);
+    outer.append(inner);
+    inner.append(...targets);
+    const originalStyle = inner.getAttribute("style");
+    const first = (window as any).start("target-0");
+    const second = (window as any).start("target-1");
+    const opened = [getComputedStyle(inner).overflow, getComputedStyle(outer).overflow];
+    targets[0].querySelector("p")!.textContent = "Replacement one";
+    await first;
+    const shared = getComputedStyle(inner).overflow;
+    const unchanged = inner.getAttribute("style") === originalStyle;
+    // A page update during the effect must win over the original value.
+    inner.style.overflow = "clip";
+    targets[1].querySelector("p")!.textContent = "Replacement two";
+    await second;
+    return { opened, shared, unchanged, restored: getComputedStyle(inner).overflow,
+      outer: getComputedStyle(outer).overflow,
+      animations: inner.getAnimations().length + outer.getAnimations().length,
+      connected: targets.every(target => target.isConnected) };
+  });
+  assert.deepEqual(overflowCleanup.opened, ["visible", "visible"]);
+  assert.equal(overflowCleanup.shared, "visible", "A concurrent sibling still needs the unclipped parent");
+  assert(overflowCleanup.unchanged && overflowCleanup.connected);
+  assert.equal(overflowCleanup.restored, "clip", "Preserve host changes made during the animation");
+  assert.equal(overflowCleanup.outer, "clip");
+  assert.equal(overflowCleanup.animations, 0);
+  console.log("PASS: nested clips, concurrent cancellation and host overflow changes are safely restored");
+
+  await setup();
+  const scrollSafety = await page.evaluate(async () => {
+    const target = document.getElementById("target-0")!;
+    const parent = document.createElement("div");
+    parent.style.cssText = "height:100px;overflow:auto";
+    target.before(parent);
+    parent.append(target);
+    parent.scrollTop = 10;
+    const before = parent.scrollTop;
+    const promise = (window as any).start(target.id);
+    const during = { overflow: getComputedStyle(parent).overflow, top: parent.scrollTop };
+    target.querySelector("p")!.textContent = "Cancel scroll fixture";
+    await promise;
+    return { before, during };
+  });
+  assert.equal(scrollSafety.during.overflow, "auto");
+  assert.equal(scrollSafety.during.top, scrollSafety.before);
+  console.log("PASS: actual scroll containers retain their overflow and scroll position");
+
+  for (const dark of [false, true]) {
+    await setup();
+    await page.locator('#target-0').evaluate((element, dark) => {
+      element.replaceChildren();
+      // A zero-width glyph avoids the textless-media rectangle without adding
+      // painted text, isolating the shard fill and fracture-edge colors.
+      element.textContent = 'x';
+      element.style.cssText = `font-size:0;width:400px;height:180px;padding:0;background:${dark ? '#222' : '#fff'}`;
+      void (window as any).start(element.id);
+    }, dark);
+    const treatment = await page.evaluate(() => ({
+      rim: getComputedStyle(document.querySelector('[data-denied-ui="outline"]')!).boxShadow,
+      glint: getComputedStyle(document.querySelector('[data-denied-ui="glint"]')!.firstElementChild!).backgroundImage,
+    }));
+    assert.equal(treatment.rim.includes('35, 35, 35'), !dark, 'Only light surfaces need dark backing behind the white rim');
+    assert.equal(treatment.glint.includes('45, 45, 45'), !dark, 'Only light surfaces need silver-gray glint shoulders');
+    await page.waitForSelector('canvas[data-denied-ui="burst"]');
+    const tones = await page.locator('canvas[data-denied-ui="burst"]').evaluate((canvas: HTMLCanvasElement) => {
+      const pixels = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data;
+      let pale = 0, charcoal = 0;
+      for (let i = 0; i < pixels.length; i += 4) {
+        if (pixels[i + 3] < 25) continue;
+        if (pixels[i] > 220) pale++;
+        if (pixels[i] > 40 && pixels[i] < 180) charcoal++;
+      }
+      return { pale, charcoal };
+    });
+    if (!dark) {
+      assert(tones.pale > 1000 && tones.charcoal > 200, 'Light shards need pale interiors and visible charcoal fracture edges');
+    } else {
+      assert.equal(tones.pale, 0, 'Keep the original dark shard fill');
+      // Unpremultiplying low-alpha edge pixels can shift a few gray values.
+      assert(tones.charcoal < 10, 'Do not add new outlines to dark shards');
+    }
+    await page.waitForFunction(() => !document.querySelector('canvas[data-denied-ui="burst"]'));
+    console.log(`PASS: ${dark ? 'dark treatment stays unchanged' : 'light shards, rim and glint gain contrast'}`);
+  }
+
+  await setup();
+  await page.evaluate(() => { void (window as any).start("target-0"); });
+  assert.equal(await page.locator('[data-denied-ui="outline"]').count(), 1,
+    "Add a separate white rim without rewriting the host outline");
+  const blinking = await page.locator('[data-denied-ui="outline"]').evaluate(element => {
+    const animation = element.getAnimations().find(animation => animation.effect?.getTiming().duration === 500)!;
+    animation.pause();
+    const samples = [0, 124, 125, 249, 250, 374, 375, 499, 500, 600].map(time => {
+      animation.currentTime = time;
+      return Number(getComputedStyle(element).opacity);
+    });
+    const style = getComputedStyle(element);
+    return { samples, rim: style.boxShadow, backface: style.backfaceVisibility, pointerEvents: style.pointerEvents };
+  });
+  assert.deepEqual(blinking.samples, [1, 1, 0, 0, 1, 1, 0, 0, 0, 0]);
+  assert(blinking.rim.includes("255, 255, 255") && blinking.rim.includes("3px"));
+  assert.equal(blinking.backface, "visible", "The rim should remain visible when the button spins backward");
+  assert.equal(blinking.pointerEvents, "none");
+  await page.waitForFunction(() => (window as any).results.length === 1);
+  assert.equal(await page.locator('[data-denied-ui="outline"]').count(), 0);
+  console.log("PASS: independent white rim blinks twice within 500ms and cleans up");
+
   await setup();
   const originalNeighbor = await page.locator("#neighbor").boundingBox();
   const effectStarted = performance.now();
@@ -64,6 +178,8 @@ try {
     const lightBox = glint?.getBoundingClientRect();
     return {
       opacity: Number(getComputedStyle(element).opacity),
+      spinDuration: element.getAnimations().find(animation => (animation.effect as KeyframeEffect)
+        .getKeyframes().some(frame => String(frame.transform).includes("rotateY")))?.effect?.getTiming().duration,
       frames: element.getAnimations().flatMap(animation => (animation.effect as KeyframeEffect).getKeyframes()),
       glint: glint && surface && lightBox ? {
         hidden: glint.getAttribute("aria-hidden"),
@@ -77,10 +193,11 @@ try {
     };
   });
   const spinFrames = winding.frames.filter(frame => typeof frame.transform === "string" && frame.transform.includes("rotateY"));
+  assert.equal(winding.spinDuration, 1200, "Extend the spin by 500ms without changing the blink duration");
   const angles = spinFrames.map(frame => Number(/rotateY\(([-\d.]+)deg\)/.exec(frame.transform as string)?.[1]));
   assert(angles.length >= 8, "The intact component must turn left-right around the vertical Y-axis");
   assert(spinFrames.every(frame => String(frame.transform).includes("perspective(")), "Perspective must make the near edge larger");
-  assert(angles.at(-1)! <= -1440, "The side edge must rotate toward the viewer through four turns");
+  assert.equal(angles.at(-1), -2520, "Complete seven turns within the existing spin duration");
   const increments = angles.slice(1).map((angle, index) => angles[index] - angle);
   assert(increments.every((increment, index) => !index || increment >= increments[index - 1]),
     "Equal-time keyframes must accelerate instead of spinning at a constant speed");
@@ -91,13 +208,13 @@ try {
       tilt: Number(/rotateZ\(([-\d.]+)deg\)/.exec(transform)?.[1] ?? 0),
     };
   });
-  assert(wobble.some(frame => frame.x > 10) && wobble.some(frame => frame.x < -10),
+  assert(wobble.some(frame => frame.x > 20) && wobble.some(frame => frame.x < -20),
     "The spinning component must shake dramatically in both directions");
-  assert(wobble.some(frame => frame.tilt > 6) && wobble.some(frame => frame.tilt < -6),
+  assert(wobble.some(frame => frame.tilt > 12) && wobble.some(frame => frame.tilt < -12),
     "A strong alternating tilt should make the spin wobble");
   const earlyShake = Math.max(...wobble.slice(0, 8).map(frame => Math.abs(frame.x)));
   const lateShake = Math.max(...wobble.slice(-8).map(frame => Math.abs(frame.x)));
-  assert(lateShake > earlyShake * 1.5 && lateShake <= 18, "Shake should build but remain bounded");
+  assert(lateShake > earlyShake * 1.5 && lateShake <= 28, "Shake should build but remain bounded");
   for (const frame of [wobble[0], wobble.at(-1)!]) {
     assert.equal(frame.x, 0, "The shake must align with the original component at the burst handoff");
     assert.equal(frame.tilt, 0, "The tilt must align with the fragment atlas at the burst handoff");
@@ -112,6 +229,13 @@ try {
   assert(String(winding.glint.sweep[0].transform).includes("-110%"));
   assert(String(winding.glint.sweep.at(-1)!.transform).includes("110%"), "The light must sweep through, not remain static");
   assert.equal(await page.locator("canvas[data-denied-ui]").count(), 0, "Do not explode before peak speed");
+  await page.waitForFunction(() => document.getElementById('target-0')?.getAnimations().some(animation =>
+    animation.effect?.getTiming().duration === 1200 && animation.playState === 'finished'));
+  const held = await page.locator('#target-0').evaluate(element => getComputedStyle(element).transform);
+  await page.waitForTimeout(150);
+  assert.equal(await page.locator('canvas[data-denied-ui="burst"]').count(), 0, 'Hold intact before breaking into shards');
+  assert.equal(await page.locator('#target-0').evaluate(element => getComputedStyle(element).transform), held,
+    'The pause should be still, not a slower spin');
   await page.waitForSelector("canvas[data-denied-ui]");
   assert.equal(await page.locator('[data-denied-ui="glint"]').count(), 0, "The glint must end at the explosion");
   await page.waitForTimeout(50);
@@ -131,11 +255,11 @@ try {
   assert.equal(ink.colored, 0, "Removal ink must be monochrome");
   await page.waitForFunction(() => (window as any).results.length === 1);
   const result = await page.evaluate(() => (window as any).results[0]);
-  assert(result.removed && result.ms >= 850 && result.ms < 1200, JSON.stringify(result));
+  assert(result.removed && result.ms >= 1650 && result.ms < 2000, JSON.stringify(result));
   assert((await page.locator("#neighbor").boundingBox())!.y < originalNeighbor!.y);
   assert.equal(await page.locator("#neighbor").count(), 1);
   await page.waitForFunction(() => !document.querySelector("canvas[data-denied-ui]"));
-  assert(performance.now() - effectStarted < 1450, "The explosion must finish promptly after the spin");
+  assert(performance.now() - effectStarted < 2250, "The explosion must finish promptly after the spin and pause");
   console.log("PASS: clean accelerating Y-axis spin, glass glint, explosion and cleanup");
 
   await setup();
@@ -144,7 +268,9 @@ try {
     element.setAttribute("style", "width:400px;height:180px;padding:0;border-radius:0;background:#222");
   });
   await page.evaluate(() => { void (window as any).start("target-0"); });
-  await page.waitForSelector("canvas[data-denied-ui]");
+  // Observe release on an animation frame: selector retry backoff can consume
+  // most of the short burst before the mid-flight pixel sample starts.
+  await page.waitForFunction(() => document.querySelector('canvas[data-denied-ui="burst"]'));
   await page.waitForTimeout(250);
   const chunks = await page.locator("canvas[data-denied-ui]").evaluate((canvas: HTMLCanvasElement) => {
     // Measure connected painted regions in the real renderer, not a mocked
@@ -152,7 +278,7 @@ try {
     const { width, height } = canvas;
     const pixels = canvas.getContext("2d")!.getImageData(0, 0, width, height).data;
     const seen = new Uint8Array(width * height);
-    const sizes: { area: number; fill: number }[] = [];
+    const sizes: { area: number; fill: number; left: number; right: number }[] = [];
     for (let start = 0; start < seen.length; start++) {
       if (seen[start] || pixels[start * 4 + 3] < 25) continue;
       const stack = [start];
@@ -177,12 +303,16 @@ try {
           stack.push(neighbor);
         }
       }
-      if (area > 20) sizes.push({ area, fill: area / ((maxX - minX + 1) * (maxY - minY + 1)) });
+      if (area > 20) sizes.push({ area, fill: area / ((maxX - minX + 1) * (maxY - minY + 1)), left: minX, right: maxX });
     }
     const ratio = width / parseFloat(canvas.style.width);
-    return sizes.map(piece => ({ ...piece, area: piece.area / (ratio * ratio) }));
+    return sizes.map(piece => ({ ...piece, area: piece.area / (ratio * ratio), left: piece.left / ratio, right: piece.right / ratio }));
   });
   assert(chunks.length >= 4 && chunks.length <= 6, `Expected a handful of chunky pieces, got ${chunks.length}`);
+  const spread = Math.max(...chunks.map(piece => piece.right)) - Math.min(...chunks.map(piece => piece.left));
+  // The unchanged shard widths and rotation still contribute to the footprint;
+  // Quartering the original travel does not quarter the total painted width.
+  assert(spread < 470, `Keep the 400px fixture's burst compact; painted width was ${spread}px`);
   assert(chunks.filter(piece => piece.area > 1000).length >= 4, `Shards must stay substantial mid-flight: ${JSON.stringify(chunks)}`);
   // Pointed triangular silhouettes occupy at most half their bounding box;
   // allow a little rasterization tolerance and overlap between flying shards.
@@ -218,12 +348,13 @@ try {
   assert(!(await page.evaluate(() => (window as any).results[0])).removed);
   assert.equal(await page.locator("#target-0").count(), 1);
   assert.equal(await page.locator('[data-denied-ui="glint"]').count(), 0);
+  assert.equal(await page.locator('[data-denied-ui="outline"]').count(), 0, "Cancel the blinking rim with stale content");
   assert.equal(await page.locator("#target-0").evaluate(element => element.getAnimations().length), 0);
   console.log("PASS: changing evidence during the spin removes the active glint and preserves the component");
 
   await setup();
   await page.evaluate(() => { void (window as any).start("target-0"); });
-  await page.waitForSelector("canvas[data-denied-ui]");
+  await page.waitForFunction(() => document.querySelector('canvas[data-denied-ui="burst"]'));
   await page.locator("#target-0 p").evaluate(element => { element.textContent = "A replacement arriving after the spin must survive too."; });
   await page.waitForFunction(() => (window as any).results.length === 1);
   assert.equal(await page.locator("#target-0").count(), 1);
@@ -305,10 +436,11 @@ try {
     });
   });
   assert.equal(await page.locator('[data-denied-ui="glint"]').count(), 4, "Glint layers must be bounded across a wave");
+  assert.equal(await page.locator('[data-denied-ui="outline"]').count(), 4, "Rims share the glint concurrency limit");
   await page.waitForSelector("canvas[data-denied-ui]");
   assert(await page.locator("canvas[data-denied-ui]").count() <= 4, "Visual layers must be bounded across a wave");
   await page.waitForFunction(() => (window as any).results.length === 12);
-  assert((await page.evaluate(() => (window as any).results)).every((r: any) => r.removed && r.ms < 1200));
+  assert((await page.evaluate(() => (window as any).results)).every((r: any) => r.removed && r.ms < 2000));
   await page.waitForFunction(() => !document.querySelector("canvas[data-denied-ui]"));
   assert.deepEqual(errors, []);
   console.log("PASS: concurrent removals stay bounded, do not serialize, and leave no orphan effects");

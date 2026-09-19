@@ -113,7 +113,7 @@ try {
   pass("actual FastAPI/Jev decisions remove an ad and a scam, retain benign content, exclude inputs");
 
   await add("animated", SCAM);
-  await page.waitForFunction(() => document.querySelector("#animated")?.getAnimations().some(a => a.effect?.getTiming().duration === 700));
+  await page.waitForFunction(() => document.querySelector("#animated")?.getAnimations().some(a => a.effect?.getTiming().duration === 1200));
   assert.equal(await page.locator('[data-denied-ui="glint"]').count(), 1,
     "A real Jev-triggered removal must use the glass-glint renderer");
   await mkdir("artifacts", { recursive: true });

@@ -1,5 +1,5 @@
 import { OWN } from "../contracts";
-import { renderedParent } from "../scan";
+import { isDarkSurface } from "./surface";
 
 const MAX_LAYERS = 4;
 const MAX_ATLAS_PIXELS = 1_000_000;
@@ -41,15 +41,8 @@ export function prepareBurst(element: HTMLElement, peakScale: number): Burst | u
   ink.scale(ratio, ratio);
   ink.textBaseline = "top";
 
-  // Follow rendered ancestry through slots and shadow hosts in either theme.
-  let shade = 28;
-  for (let ancestor: Element | null = element; ancestor; ancestor = renderedParent(ancestor)) {
-    const color = getComputedStyle(ancestor).backgroundColor.match(/[\d.]+/g)?.map(Number);
-    if (color && (color.length === 3 || color[3] > .5)) {
-      shade = color[0] * .2126 + color[1] * .7152 + color[2] * .0722 < 128 ? 235 : 28;
-      break;
-    }
-  }
+  const lightSurface = !isDarkSurface(element);
+  const shade = lightSurface ? 28 : 235;
   const textColor = `rgb(${shade},${shade},${shade})`;
   const range = document.createRange();
   let words = 0;
@@ -123,7 +116,7 @@ export function prepareBurst(element: HTMLElement, peakScale: number): Burst | u
     const x = points.reduce((sum, point) => sum + point.x, 0) / points.length;
     const y = points.reduce((sum, point) => sum + point.y, 0) / points.length;
     const angle = Math.atan2(y - impact.y, x - impact.x);
-    const distance = 85 + noise(fragments.length + 90) * 105;
+    const distance = (85 + noise(fragments.length + 90) * 105) * .25;
     // Large sections separate radially with a little independent tilt. Avoid
     // the pinwheel motion of the old Z-axis spin and its tiny confetti fragments.
     fragments.push({ points, x, y,
@@ -207,7 +200,7 @@ export function prepareBurst(element: HTMLElement, peakScale: number): Burst | u
         context.save();
         context.globalAlpha = (1 - t) ** 1.3;
         context.translate(MARGIN + width / 2 + (piece.x - width / 2) * peakScale + piece.dx * travel,
-          MARGIN + height / 2 + (piece.y - height / 2) * peakScale + piece.dy * travel + 45 * t * t);
+          MARGIN + height / 2 + (piece.y - height / 2) * peakScale + piece.dy * travel + 12 * t * t);
         context.rotate(piece.turn * travel);
         context.scale(scale, scale);
         context.beginPath();
@@ -216,8 +209,17 @@ export function prepareBurst(element: HTMLElement, peakScale: number): Burst | u
           else context.moveTo(point.x - piece.x, point.y - piece.y);
         });
         context.closePath();
+        context.save();
         context.clip();
         context.drawImage(atlas, -piece.x, -piece.y, width, height);
+        context.restore();
+        if (lightSurface) {
+          // Stroke after releasing the clip so the entire fracture edge is
+          // visible. Keep its screen-space weight as the shard scales down.
+          context.strokeStyle = "rgba(45,45,45,.72)";
+          context.lineWidth = 1.25 / scale;
+          context.stroke();
+        }
         context.restore();
       }
       frame = requestAnimationFrame(draw);

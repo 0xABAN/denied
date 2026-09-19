@@ -18,6 +18,13 @@
   .eyebrow { color: var(--muted); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
   h1 { font-size: clamp(28px, 4vw, 40px); line-height: 1.15; font-weight: 630; margin: 14px 0; }
   .intro { color: var(--muted); margin: 0 0 32px; max-width: 55ch; }
+  .button-demo { margin-bottom: 32px; padding: 24px; background: var(--surface); border: 1px solid var(--line); border-radius: 24px; }
+  .button-demo-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .button-demo h2 { margin: 0; font-size: 18px; font-weight: 600; }
+  #reset-button { border: 1px solid var(--line); border-radius: 20px; padding: 8px 14px; background: none; color: var(--ink); }
+  #button-stage { min-height: 200px; display: grid; place-items: center; }
+  #sample-button { min-width: 220px; padding: 22px 28px; border: 1px solid var(--ink); border-radius: 16px; background: var(--page); color: var(--ink); font-size: 20px; font-weight: 600; }
+  #button-status { margin: 0; font-size: 14px; color: var(--muted); }
   .conversation { background: var(--surface); border: 1px solid var(--line); border-radius: 24px; padding: 26px; box-shadow: 0 12px 48px #00000006; }
   .channel { display: flex; gap: 12px; align-items: center; padding-bottom: 22px; border-bottom: 1px solid var(--line); margin-bottom: 22px; }
   .channel strong { font-weight: 620; } .channel p { color: var(--muted); font-size: 13px; margin: 3px 0 0; }
@@ -41,6 +48,11 @@
   <div class="eyebrow">Removal motion</div>
   <h1>Gone. Keep the conversation.</h1>
   <p class="intro">Wind up. Spin faster. Break apart.</p>
+  <section class="button-demo" aria-label="Sample button">
+    <div class="button-demo-heading"><h2>Try it on a button</h2><button id="reset-button" type="button" disabled>Reset button</button></div>
+    <div id="button-stage"><button id="sample-button" type="button">Try the explosion</button></div>
+    <p id="button-status" role="status">Click to spin and shatter the button.</p>
+  </section>
   <section class="conversation" aria-label="Example conversation">
     <div class="channel"><span class="channel-mark" aria-hidden="true">#</span><div><strong>Design club</strong><p>Today’s conversation</p></div></div>
     <div id="messages"></div>
@@ -56,6 +68,31 @@
 </template>
 <script type="module">
   import { removeElement } from "/effects.js";
+  const buttonStage = document.querySelector("#button-stage");
+  const resetButton = document.querySelector("#reset-button");
+  const buttonStatus = document.querySelector("#button-status");
+  const sampleButton = document.querySelector("#sample-button").cloneNode(true);
+  let buttonBusy = false;
+  buttonStage.addEventListener("click", async event => {
+    const button = event.target.closest("#sample-button");
+    if (!button || buttonBusy) return;
+    buttonBusy = true;
+    button.setAttribute("aria-disabled", "true");
+    buttonStatus.textContent = "Wind up. Spin faster. Break apart.";
+    // Use the exact extension renderer; only the demonstration target changes.
+    await removeElement(button, { animate: true }, () => button.isConnected);
+    buttonBusy = false;
+    buttonStatus.textContent = "Gone. Reset the button to try again.";
+    resetButton.disabled = false;
+    if (document.activeElement === document.body) resetButton.focus({ preventScroll: true });
+  });
+  resetButton.addEventListener("click", () => {
+    buttonStage.replaceChildren(sampleButton.cloneNode(true));
+    resetButton.disabled = true;
+    buttonStatus.textContent = "Click to spin and shatter the button.";
+    buttonStage.querySelector("button").focus({ preventScroll: true });
+  });
+
   const messages = document.querySelector("#messages");
   const replay = document.querySelector("#replay");
   const status = document.querySelector("#status");
