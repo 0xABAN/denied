@@ -23,7 +23,6 @@ async function refresh(): Promise<void> {
     const stats = await chrome.tabs.sendMessage(id, { type: "pageStats" }, { frameId: 0 }) as PageStats;
     if (!stats) throw new Error("No content script");
     show("page-total", String(stats.total));
-    show("breakdown", `${stats.advertising} ads · ${stats.unsafe_content} unsafe`);
     show("history-status", stats.recording_error || "");
     show("page-status", stats.error ? `Checking unavailable: ${stats.error}` :
       !config.enabled ? "Paused" : `${stats.pending} pending · ${stats.checked} checked · ${stats.deferred} unchecked/deferred`);
@@ -44,9 +43,9 @@ async function check(): Promise<void> {
 
 async function save(): Promise<void> {
   const updated = {
+    ...config,
     enabled: element<HTMLInputElement>("enabled").checked,
     animate: element<HTMLInputElement>("animate").checked,
-    toast: element<HTMLInputElement>("toast").checked,
     mode: element<HTMLSelectElement>("mode").value,
     apiBase: element<HTMLInputElement>("apiBase").value,
   };
@@ -59,7 +58,9 @@ function action(operation: () => Promise<void>): void {
   void operation().catch(error => show("error", error instanceof Error ? error.message : "Request failed"));
 }
 
-for (const id of ["enabled", "animate", "toast", "mode"]) element(id).addEventListener("change", () => action(save));
+element("mode").addEventListener("change", () => action(save));
+element("enabled").addEventListener("change", () => action(save));
+element("animate").addEventListener("change", () => action(save));
 element("save").addEventListener("click", () => action(async () => { await save(); await check(); }));
 element("check").addEventListener("click", () => action(check));
 element("rescan").addEventListener("click", () => action(async () => {
@@ -71,7 +72,8 @@ element("rescan").addEventListener("click", () => action(async () => {
 
 action(async () => {
   config = (await send({ type: "settings" })).settings;
-  for (const id of ["enabled", "animate", "toast"] as const) element<HTMLInputElement>(id).checked = config[id];
+  element<HTMLInputElement>("enabled").checked = config.enabled;
+  element<HTMLInputElement>("animate").checked = config.animate;
   element<HTMLSelectElement>("mode").value = config.mode;
   element<HTMLInputElement>("apiBase").value = config.apiBase;
   await Promise.all([refresh(), check()]);
