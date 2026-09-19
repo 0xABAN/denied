@@ -13,23 +13,9 @@
     <div><strong id="all-total">0</strong><span>total removed</span></div>
   </section>
   <section class="options">
-    <label class="switch-row" for="enabled"><span>Protection</span><input id="enabled" type="checkbox" role="switch"></label>
     <label class="switch-row" for="animate"><span>Removal effects</span><input id="animate" type="checkbox" role="switch"></label>
     <button id="rescan" type="button">Rescan page</button>
   </section>
-  <p id="page-status" role="status">Loading page status…</p>
-  <p id="history-status" role="status"></p>
-  <details>
-    <summary>Advanced settings</summary>
-    <label for="mode">Mode</label>
-    <select id="mode"><option value="remove">Remove flagged content</option><option value="highlight">Highlight only (diagnostic)</option></select>
-    <label for="apiBase">API origin</label>
-    <input id="apiBase" type="url" spellcheck="false" autocomplete="off">
-    <div class="row"><button id="save" type="button">Save</button><button id="check" type="button">Check connection</button></div>
-    <p class="hint">Set TYPESAFE_API_KEY in the Python backend, not here.</p>
-  </details>
-  <p id="service-status" role="status">Checking local API…</p>
-  <p id="error" role="alert"></p>
   <script type="module" src="popup.js"></script>
 </body>
 </html>
