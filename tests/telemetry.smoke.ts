@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { chromium, type BrowserContext } from "playwright";
 import type { Batch, Judgments, PageStats, Removal } from "../extension/src/contracts";
 import { localAPI, until } from "./api";
+import { observeJudgments } from "./observe-judgments";
 
 const token = Bun.env.BACKEND_API_TOKEN;
 assert(token && token.length >= 32, "Configure BACKEND_API_TOKEN; real storage tests cannot run without it");
@@ -17,6 +18,7 @@ const pageUrl = `http://127.0.0.1:${site.port}/`;
 const SCAM = "Your bank account will be deleted in ten minutes. Reply with your password and verification code so our agent can save it.";
 let api: Awaited<ReturnType<typeof localAPI>> | undefined;
 let context: BrowserContext | undefined;
+let observer: ReturnType<typeof observeJudgments> | undefined;
 const reports: Removal[] = [];
 const evaluated: { batch: Batch; result: Judgments }[] = [];
 let captureFailed = false;
@@ -85,12 +87,11 @@ try {
     args: [`--disable-extensions-except=${resolve("dist")}`, `--load-extension=${resolve("dist")}`],
   });
   context.on("request", request => {
-    if (request.url() === `${api!.url}/outcomes`) reports.push(request.postDataJSON());
+    if (request.url() === `${observer!.url}/outcomes`) reports.push(request.postDataJSON());
   });
-  context.on("response", async response => {
-    if (response.url() !== `${api!.url}/judge` || response.status() !== 200) return;
-    try { evaluated.push({ batch: response.request().postDataJSON(), result: await response.json() }); }
-    catch { captureFailed = true; }
+  observer = observeJudgments(api.url, batch => batch, (batch, status, result) => {
+    if (status === 200 && result) evaluated.push({ batch, result });
+    else captureFailed = true;
   });
   const worker = context.serviceWorkers()[0] || await context.waitForEvent("serviceworker");
   const extensionId = new URL(worker.url()).host;
@@ -98,7 +99,7 @@ try {
   const popup = await context.newPage();
   await popup.goto(`chrome-extension://${extensionId}/popup.html`);
   await popup.locator("details summary").click();
-  await popup.locator("#apiBase").fill(api.url);
+  await popup.locator("#apiBase").fill(observer.url);
   await popup.locator("#save").click();
   await popup.waitForFunction(() => document.querySelector("#service-status")?.textContent?.includes("API ready"));
   await page.goto(pageUrl);
@@ -239,6 +240,7 @@ try {
   await context?.close();
   site.stop(true);
   await api?.stop();
+  observer?.stop();
   await rm(profile, { recursive: true, force: true });
   await database("cleanup");
 }

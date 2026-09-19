@@ -6,7 +6,7 @@ A Chrome extension for children ages 0-12 that removes advertisements and unsafe
 
 Two independent filters share the same interaction:
 
-- Advertising: remove detected paid advertisements and sponsored placements, even when their content is child-safe.
+- Advertising/commercial solicitation: remove detected paid advertisements, sponsored placements, and all offers to sell goods or services, including legitimate private resale and merchant listings. Sponsorship or fraud is not required for a sales offer. Preserve neutral product discussion, past-purchase accounts, and commerce education.
 - Child safety: remove text or linked solicitations that violate the policy, even when they are not advertisements.
 
 Apply both filters to individual page blocks, including cards, posts, comments, banners, and popups. The policy is to block all ads and covered unsafe content; detection is not exhaustive.
@@ -43,11 +43,11 @@ Page content script
   discover blocks -> extract compact evidence
        |
 Extension service worker
-  validate messages -> forward bounded requests
+  validate messages -> coalesce bounded batches into a streaming transport
        |
-Python API: POST /judge
+Python API: POST /judge-stream (POST /judge retained for direct clients)
   validate evidence -> construct fixed questions -> call Jev
-  record every keep/remove judgment in Tiger after responding
+  stream each completed batch; record judgments after the response stream finishes
        |
 Typed judgments, keyed by candidate ID and revision
        |
@@ -60,24 +60,26 @@ POST /outcomes with signed judgment receipts
 
 ### Discovery and evidence
 
-Keep two discovery paths: ad heuristics and visible text-block discovery. Ad heuristics can use sponsorship labels, element attributes, known ad hosts, and container shape. Safety discovery must also find ordinary paragraphs and comments without ad-like markup.
+Discovery is semantic-neutral: rendered text and media are eligible without ad-specific candidate selectors. Generic leaf article/list-item boundaries and compact, visibly bounded repeated containers group related content. These structural rules define removal boundaries, not advertising judgments. Nested collections and ambiguous wrappers retain smaller targets. This first pass does not infer conversation/reply context outside the target.
 
 Choose the smallest coherent offending block. Deduplicate nested candidates without collapsing an entire feed, article, or page into one removal target. Segment oversized text into bounded passages with enough surrounding context; do not silently truncate and treat the remainder as checked.
 
 Each candidate carries a page/document identity, local candidate ID, content revision, page hostname and scheme, bounded visible text, link labels with parsed destination hosts and schemes, and relevant ad metadata including iframe-source host/scheme and recognized provider attributes. Code extracts address components and geometry; Jev interprets the evidence. Do not transmit URL paths, credentials, query strings, or fragments as address metadata. Missing or unparseable source/link schemes are empty strings, meaning unknown.
 
-Use debounced, bounded batches. Observe additions, text changes, and relevant attribute changes such as link destinations. Cache judgments by evidence revision and policy version, not merely DOM element identity. Ignore the extension's own UI and mutations. Do not repeatedly rescan the full document for every mutation.
+Discover rendered text blocks without ad-specific candidate selectors, including open shadow roots and assigned slots. Start scanning without an initial delay, then dispatch waves of up to 600 blocks in at most 30 parallel requests of up to 20 blocks each, with at least five seconds between wave starts. Schedule the next wave independently of outstanding responses; never redispatch an in-flight revision. Apply each completed batch without waiting for sibling batches. The backend shares rolling request admission across tabs and honors provider throttling with backoff, without estimating tokens from JSON bytes. Observe additions, text changes, and relevant attribute changes inside the document and open shadow roots. Cache judgments by evidence revision and policy version, not merely DOM element identity. Ignore the extension's own UI and mutations. Do not repeatedly rescan the full document for every mutation.
 
 Start with the top-level document. Cross-origin frame contents, closed shadow roots, canvas text, and browser-internal pages are not covered. A recognizable iframe ad container may still be removable from the containing page.
 
 ### Judgment contract
 
-The backend constructs two independent Noul questions per candidate in a batch:
+The backend constructs two separately identified Noul questions per block, with up to 20 blocks per Jev request. The extension multiplexes up to 30 such batches through one bounded NDJSON `/judge-stream` transport, avoiding the browser HTTP/1 six-connection queue. Each result carries its input batch index and is validated against that batch before delivery. Partial failures leave successful siblings usable; incomplete/malformed streams fail outstanding batches. The original `/judge` endpoint remains available. Server-owned policy is included once in state, with questions explicitly referencing the policy and their candidate:
 
-1. Is this element a paid advertisement or sponsored placement?
+1. Is this element advertising or an offer to sell goods or services or solicit a purchase?
 2. Does its text or linked solicitation violate the under-13 content policy?
 
 Send these to `POST https://api.typesafe.ai/v1/systemone`. Give each candidate an explicit letter-keyed object (`item_A`, `item_B`, ...) for its questions to reference; omit DOM tracking IDs and revisions from model state. Numeric list references were confused with numeric tracking IDs during real testing. Keep those IDs in code for response routing. Treat all page material as untrusted evidence, never model instructions. Clients supply evidence rather than arbitrary questions, prompts, or fetch destinations.
+
+Reuse provider connections with a 60-second idle expiry. HTTPX's five-second default coincides with the wave interval and caused repeated connection setup; cold waves still include TLS/network startup. Distinguish individual model round trips, the slowest result in a wave, and animation-completed removal when reporting latency.
 
 Validate returned scores as finite numbers in `[0, 1]`. Apply separate, server-owned thresholds:
 
@@ -103,7 +105,7 @@ The authoritative `/judge` API signs positive judgments with a backend-only secr
 
 Store one idempotent actual-removal record per document/target/revision in Tiger, even when both reasons match. Use the existing native `PG_*` credentials, TLS, and a private `BACKEND_API_TOKEN` for history/metrics reads. Keep database access bounded and separate from inference. A storage outage must not prevent filtering; report the history failure separately. Delivery retries once but is not durable across tab/worker shutdown, so do not claim a complete audit trail.
 
-Store up to 24,000 characters of removed visible text, flag truncation, and retain triggering-passage scores and thresholds. Each `classifications` entry contains only `id`, `revision`, `text`, `ad_score`, `unsafe_score`, `reasons`, `ad_threshold`, and `safety_threshold`; do not duplicate `remove`, version fields, or `judge_ms` there. Keep duration metrics on the row and version metadata on judgment rows. Judgment text is bounded to 1,000 characters per passage. Do not store raw HTML, unscanned browsing content, input values, or editable drafts. Opaque media ad containers may have empty text.
+Store up to 24,000 characters of removed visible text, flag truncation, and retain triggering-block scores and thresholds. Each `classifications` entry contains only `id`, `revision`, `text`, `ad_score`, `unsafe_score`, `reasons`, `ad_threshold`, and `safety_threshold`; do not duplicate `remove`, version fields, or `judge_ms` there. Keep duration metrics on the row and version metadata on judgment rows. Judgment text is bounded to 24,000 characters per block. Do not store raw HTML, unscanned browsing content, input values, or editable drafts. Textless media is discovered alongside text blocks and may be judged from its available metadata without reading embedded content.
 
 Each row has exactly one UTC timestamp named `date`: server evaluation completion for a judgment, browser deletion time for a removal. Keep `judge_ms` and removal `total_ms` as durations, not extra date fields. Migrate existing removal time to `date` and remove the other top-level/nested timestamps while preserving content and scores. Browser and server clocks can differ. There is no automatic retention policy in this demo.
 

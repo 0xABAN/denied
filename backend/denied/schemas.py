@@ -9,6 +9,7 @@ Host = Annotated[str, Field(max_length=253)]
 Scheme = Annotated[str, Field(max_length=32, pattern=r"^(?:[a-z][a-z0-9+.-]*)?$")]
 Probability = Annotated[float, Field(strict=True, ge=0, le=1, allow_inf_nan=False)]
 Reason = Literal["advertising", "unsafe_content"]
+MAX_BATCH = 600
 
 
 class StrictModel(BaseModel):
@@ -35,7 +36,7 @@ class AdEvidence(StrictModel):
 class Candidate(StrictModel):
     id: Identifier
     revision: int = Field(ge=1)
-    text: str = Field(max_length=1000)
+    text: str = Field(max_length=24000)
     links: list[Link] = Field(max_length=8)
     ad: AdEvidence
 
@@ -44,7 +45,7 @@ class Batch(StrictModel):
     document_id: Identifier
     page_host: Host
     page_scheme: Literal["http", "https"]
-    candidates: list[Candidate] = Field(min_length=1, max_length=20)
+    candidates: list[Candidate] = Field(min_length=1, max_length=MAX_BATCH)
 
     @model_validator(mode="after")
     def unique_ids(self):
@@ -57,6 +58,18 @@ class Batch(StrictModel):
 class Noul(StrictModel):
     type: Literal["noul"]
     noul: Probability
+
+
+class Wave(StrictModel):
+    """Multiplex at most thirty independent twenty-block provider requests."""
+
+    batches: list[Batch] = Field(min_length=1, max_length=30)
+
+    @model_validator(mode="after")
+    def bounded_provider_batches(self):
+        if any(len(batch.candidates) > 20 for batch in self.batches):
+            raise ValueError("Stream batches must contain at most twenty blocks")
+        return self
 
 
 class Decision(StrictModel):

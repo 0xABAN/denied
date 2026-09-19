@@ -35,7 +35,7 @@ class Claim(StrictModel):
 
 class Passage(StrictModel):
     receipt: str = Field(max_length=4096)
-    text: str = Field(max_length=1000)
+    text: str = Field(max_length=24000)
 
 
 class Removal(StrictModel):

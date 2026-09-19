@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS {judgments} (
     date TIMESTAMPTZ NOT NULL,
     page_host TEXT NOT NULL,
     page_scheme TEXT NOT NULL CHECK (page_scheme IN ('http', 'https')),
-    text TEXT NOT NULL CHECK (char_length(text) <= 1000),
+    text TEXT NOT NULL CHECK (char_length(text) <= 24000),
     links JSONB NOT NULL,
     ad JSONB NOT NULL,
     ad_score DOUBLE PRECISION NOT NULL CHECK (ad_score BETWEEN 0 AND 1),
@@ -67,3 +67,7 @@ CREATE TABLE IF NOT EXISTS {judgments} (
     PRIMARY KEY (batch_id, candidate_id)
 );
 CREATE INDEX IF NOT EXISTS judgments_date_idx ON {judgments} (date DESC);
+
+-- Existing installations stored passages; independent requests now retain a whole block.
+ALTER TABLE {judgments} DROP CONSTRAINT IF EXISTS judgments_text_check;
+ALTER TABLE {judgments} ADD CONSTRAINT judgments_text_check CHECK (char_length(text) <= 24000);

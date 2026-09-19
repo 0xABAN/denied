@@ -1,4 +1,6 @@
-import { DEFAULTS, MAX_BATCH, apiBase, judgmentsFrom, settingsFrom, zeroCounts, type Batch, type Counts, type Removal, type Settings } from "./contracts";
+import { DEFAULTS, MAX_BATCH, apiBase, settingsFrom, zeroCounts, type Batch, type Counts, type Removal, type Settings } from "./contracts";
+import { BLOCKS_PER_REQUEST } from "./scheduling";
+import { enqueueJudgment } from "./transport";
 
 type Ledger = { total: Counts; documents: Record<string, Counts> };
 const ready = chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
@@ -10,7 +12,7 @@ async function settings(): Promise<Settings> {
   return settingsFrom({ ...DEFAULTS, ...stored.settings });
 }
 
-async function request(path: "/judge" | "/health" | "/outcomes", payload?: Batch | Removal): Promise<unknown> {
+async function request(path: "/health" | "/outcomes", payload?: Removal): Promise<unknown> {
   const config = await settings();
   const response = await fetch(`${apiBase(config.apiBase)}${path}`, {
     method: payload ? "POST" : "GET",
@@ -59,11 +61,13 @@ async function handle(message: any, sender: chrome.runtime.MessageSender): Promi
   switch (message.type) {
     case "settings": return { settings: await settings() };
     case "judge": {
-      if (!page || !(await settings()).enabled) throw new Error("Filtering is disabled");
+      const config = await settings();
+      if (!page || !config.enabled) throw new Error("Filtering is disabled");
       const batch = message.batch as Batch;
       if (!batch || typeof batch.document_id !== "string" || !Array.isArray(batch.candidates) ||
-          !batch.candidates.length || batch.candidates.length > MAX_BATCH || JSON.stringify(batch).length > 128000) throw new Error("Invalid batch");
-      return judgmentsFrom(await request("/judge", batch), batch);
+          !batch.candidates.length || batch.candidates.length > BLOCKS_PER_REQUEST) throw new Error("Invalid batch");
+      if (new TextEncoder().encode(JSON.stringify(batch)).length > 2_000_000) throw new Error("Batch too large");
+      return enqueueJudgment(config.apiBase, batch);
     }
     case "removal": {
       if (!page) throw new Error("Removal records require a page");

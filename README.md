@@ -2,6 +2,8 @@
 
 A local-first Chrome extension demo for under-13 text/link filtering and advertisement removal. Flagged blocks glow, pop, and disappear. The Python API supplies two independent Jev judgments; the browser owns discovery and animation.
 
+The advertising category also covers commercial solicitation: private sales, ticket resale, merchant listings, and paid-service offers, even when legitimate. Neutral discussion of products or past purchases is not a sales offer. Filtering does not guarantee purchase prevention.
+
 Content remains visible while it is checked and animated. This is not prevention of initial exposure, a media moderator, or tamper-proof parental control. Read [CONTEXT.md](CONTEXT.md) for the policy and scope.
 
 ## Run locally
@@ -79,6 +81,13 @@ bun run build
 bunx playwright install chromium
 bun run test:api
 bun run test:extension
+# 600-block waves (20 blocks/request) and live shadow-root mutation coverage:
+bun tests/waves.real.ts
+# Real provider and browser-transport latency (three 600-block waves each):
+bun tests/latency.real.ts
+cd backend && uv run --env-file .env python benchmark_latency.py
+# Return to the repository root before the next command.
+cd ..
 # Also requires real Tiger credentials and BACKEND_API_TOKEN:
 bun run test:telemetry
 ```
@@ -86,6 +95,8 @@ bun run test:telemetry
 The API tests start actual loopback Uvicorn processes. They check labeled judgments, domain/protocol context, batch addressing, HTTP validation, and missing/rejected credentials. Schema and request-construction checks run the real functions without provider spending.
 
 The browser suite starts the API and loads the built extension in Chromium. It checks removals and benign-content preservation, private-input/URL exclusions, animation, changed text/links/protocols, stale responses, counters, and service-worker restart. An outage test stops the actual API, then restarts it.
+
+Provider connections stay alive for up to 60 idle seconds so five-second waves do not repeatedly pay TLS setup costs. In a local real-provider measurement, warm 600-block waves had 255–281 ms median provider round trips; the browser-path test measured 267–285 ms median batch results and 405–476 ms for the complete wave. Cold waves were slower (727 ms in that browser run). These are observations, not latency guarantees. Animations intentionally add their own time after a positive judgment. The latency test's forwarding observer buffers delivery, so its batch timings measure backend results arriving at the observer, not DOM removal; `tests/incremental.real.ts` separately verifies incremental delivery and overlapping waves.
 
 The ordinary API/browser suites disable recording. The Tiger suite uses actual Chromium, FastAPI, Jev, and Tiger Data, creates a unique `denied_test_*` schema, and removes only that schema afterward. It checks every kept/flagged passage against actual API responses, single-date records and migration of legacy dates, text/scores/timing, duplicate delivery, receipt tampering, authenticated reads, highlights and canceled removals, restart persistence, and an actual refused database connection followed by recovery. It never writes test data into the production `denied` schema.
 
@@ -117,11 +128,12 @@ For the all-judgments/single-date change, typecheck/build, all seven real API te
 - `extension/src/content.ts`: bounded queue, revisions, retries, and stale-result rejection.
 - `extension/src/effects.ts`: native glow/pop animation, notices, and diagnostic labels.
 - `extension/src/background.ts`: fixed API bridge, trusted settings, and cumulative counters.
+- `extension/src/transport.ts`: bounded streaming transport; coalesces up to 30 batches without holding completed results.
 - `extension/src/popup.ts`: the compact HTML/CSS settings interface.
 - `extension/src/contracts.ts`: shared types and boundary checks.
 - `backend/denied/app.py`: FastAPI lifecycle, loopback request checks, and deadlines.
 - `backend/denied/schemas.py`: bounded input and typed output.
-- `backend/denied/judge.py`: policy, batched Jev call, and removal decisions.
+- `backend/denied/judge.py`: policy, 20-block Jev calls, and per-block removal decisions.
 - `backend/denied/telemetry.py` and `backend/schema.sql`: signed removal receipts, optional Tiger storage, and protected history/metrics reads.
 
 Bun bundles TypeScript; Chrome runs the output. The backend uses FastAPI, HTTPX, Pydantic, and Psycopg. There is no React, Next.js, second backend, or account system.
@@ -130,11 +142,14 @@ Bun bundles TypeScript; Chrome runs the output. The backend uses FastAPI, HTTPX,
 
 - Removal requires `ad_score >= 0.70` **or** `unsafe_score >= 0.80` by default. These are uncalibrated model scores, not verified 70%/80% certainty. Higher thresholds trade fewer false removals for more missed targets. Set `DENIED_AD_THRESHOLD` and `DENIED_SAFETY_THRESHOLD` in `backend/.env` and restart the API; `/health` reports the active values.
 - Both questions receive page, link, and iframe-source hostnames and URL schemes. Domain reputation and HTTP/HTTPS are context, not allowlists or automatic decisions. A familiar domain or HTTPS does not guarantee child-appropriate content or exempt advertisements; unknown schemes remain unknown.
-- A request contains at most 20 passages, each at most 1,000 characters. Up to 24,000 characters and eight visible links are inspected per target. Longer/overlinked targets are reported as partially unchecked; observed violations may still trigger removal.
-- The browser retains at most 300 targets per page, evicting checked offscreen targets when needed. Deferred content is not safe by default, and scrolling back may require another judgment after eviction.
+- The browser starts scanning without an initial delay and dispatches waves of up to 600 blocks. The worker coalesces up to 30 twenty-block batches over an eight-millisecond collection window, then sends them through `/judge-stream` on one HTTP connection (splitting transports near the 2 MB body limit). The backend starts those provider requests in parallel and streams each batch result independently. This avoids Chrome's per-origin HTTP/1 connection queue. Wave starts are at least five seconds apart. Each block has separately identified ad and safety judgments; server-owned policy is included once per provider request.
+- Each completed batch updates the page immediately. Waves can overlap: another wave of up to 600 pending blocks can start five seconds after the prior start, even while earlier responses remain outstanding. In-flight revisions are not redispatched.
+- Discovery groups leaf articles/list items and compact, visibly bounded repeated containers into coherent targets. These generic structure/layout rules define boundaries, never ad classifications. Nested collections and ambiguous containers retain smaller targets; surrounding conversation context is not inferred in this first pass.
+- Shared backend admission limits starts to 1,200 per rolling minute. Provider token throttling is handled through 429/529 backoff; JSON bytes are not treated as tokens. Browser dispatch cadence does not guarantee provider completion within five seconds.
+- Each block contains up to 24,000 characters and eight visible links. Longer/overlinked targets remain explicitly partially unchecked. The browser retains up to 1,200 targets, evicting checked offscreen targets as needed.
 - Failed checks leave content unchanged and show an error. The browser retries once; rescan explicitly retries again. The local API bounds concurrency, body sizes, and deadlines but has no provider-spend cap; real calls may incur charges.
 - Selected visible text, link labels, hostnames/schemes, and bounded DOM metadata go through your local API to TypeSafe. Address extraction excludes URL paths, credentials, query strings, and fragments. Form values and editable drafts are excluded; visible text may still contain personal information. The application does not write candidate bodies to runtime logs. When Tiger recording is configured, it retains **all judged passages, including benign kept text**, their evidence/scores, and actual removed blocks. Input values, editable drafts, and unscanned browsing content remain excluded. Visible text itself can include a written-out URL; address-field exclusions are not text anonymization.
-- No general image, audio, video, canvas, shadow-root, or iframe-content interpretation. A recognizable iframe ad container can still be removed. Links are not followed and destination pages are not certified safe.
+- Discovery considers rendered text and media blocks without ad-specific candidate selectors, including open shadow roots and assigned slots. It observes subsequent shadow-root changes. Textless media supplies available source, label, and element metadata to Jev. Closed roots, general image/audio/video/canvas analysis, and iframe contents are not covered. Links are not followed and destination pages are not certified safe.
 - Removing an element does not undo requests it already made, stop tracking, or block downloads. Reloading can restore removed content; the extension can be disabled.
 - Test with controlled pages first. Review consent and provider data retention before use with actual children.
 

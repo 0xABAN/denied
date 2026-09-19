@@ -1,12 +1,12 @@
 import { OWN, type Candidate } from "./contracts";
+import { COLLECTION, itemBoundaries } from "./grouping";
 
 const EXCLUDED = `script,style,noscript,template,head,svg,input,textarea,select,[contenteditable]:not([contenteditable=false]),[role=textbox],[hidden],[${OWN}]`;
 const PAGE = "html,body,main,nav,header,footer,form,ul,ol,table";
 const INLINE = /^(SPAN|A|STRONG|EM|B|I|SMALL|MARK|LABEL)$/;
-const AD_TOKEN = /^(ads?|advertisement|advertising|adslot|adsbygoogle|sponsored|sponsor|banner|taboola|outbrain)$/i;
-const LABEL = /^(advertisement|sponsored(?: content)?|paid partnership|promoted|anzeige|werbung)$/i;
+const MEDIA = "iframe,img,video,audio,canvas,object,embed";
+const LABEL = /^(ad|advertisement|sponsored(?: content)?|paid partnership|promoted|anzeige|werbung)$/i;
 const HOSTS = ["doubleclick.net", "googlesyndication.com", "googleadservices.com", "taboola.com", "outbrain.com", "amazon-adsystem.com"];
-const AD_SELECTOR = "iframe,ins,[data-ad],[data-ad-slot],[data-ad-unit],[data-sponsored],[data-actirise]";
 const MAX_TEXT = 24000;
 export type Evidence = Omit<Candidate, "id" | "revision"> & { complete: boolean; text_truncated: boolean };
 
@@ -16,13 +16,39 @@ export function visible(el: Element): el is HTMLElement {
   return el.getClientRects().length > 0 && style.visibility !== "hidden" && style.display !== "none";
 }
 
-function textNodes(root: Element): Text[] {
+/** Follow rendered ancestry, including assigned slots and open shadow hosts. */
+export function renderedParent(el: Element): Element | null {
+  if (el.assignedSlot) return el.assignedSlot;
+  if (el.parentElement) return el.parentElement;
+  const root = el.getRootNode();
+  return root instanceof ShadowRoot ? root.host : null;
+}
+
+function textNodes(root: Element, onShadow?: (root: ShadowRoot) => void,
+                   onElement?: (element: Element) => void): Text[] {
   const nodes: Text[] = [];
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  let node: Node | null;
-  while ((node = walker.nextNode())) {
-    if (node.textContent?.trim() && node.parentElement && visible(node.parentElement)) nodes.push(node as Text);
-  }
+  const visited = new Set<Node>();
+  const visit = (node: Node): void => {
+    if (visited.has(node)) return;
+    visited.add(node);
+    if (node instanceof Text) {
+      if (node.data.trim() && node.parentElement && visible(node.parentElement)) nodes.push(node);
+      return;
+    }
+    if (node instanceof Element && node.matches(EXCLUDED)) return;
+    if (node instanceof Element) onElement?.(node);
+    if (node instanceof HTMLSlotElement) {
+      const assigned = node.assignedNodes({ flatten: true });
+      (assigned.length ? assigned : [...node.childNodes]).forEach(visit);
+    } else if (node instanceof Element && node.shadowRoot) {
+      onShadow?.(node.shadowRoot);
+      // Walk the rendered tree: slots supply light-DOM content exactly once.
+      [...node.shadowRoot.childNodes].forEach(visit);
+    } else {
+      [...node.childNodes].forEach(visit);
+    }
+  };
+  visit(root);
   return nodes;
 }
 
@@ -49,74 +75,67 @@ function tokens(el: Element): string[] {
   return `${el.id} ${el.getAttribute("class") || ""}`.replace(/([a-z])([A-Z])/g, "$1 $2").split(/[^a-zA-Z]+/).filter(Boolean);
 }
 
-function block(el: HTMLElement): HTMLElement {
+function block(el: HTMLElement, isItem: (el: HTMLElement) => boolean): HTMLElement {
+  // A web component may be a single item or an entire feed. Never cross a
+  // collection boundary merely because its enclosing host is compact.
+  let component: HTMLElement | undefined;
+  for (let node: Element | null = el; node && !node.matches(PAGE);) {
+    if (node.matches(COLLECTION)) break;
+    // Article semantics define a block for ordinary posts and paid placements alike.
+    if (node instanceof HTMLElement && isItem(node)) return node;
+    if (!component && node instanceof HTMLElement && node.shadowRoot &&
+        !node.querySelector(COLLECTION) && !node.shadowRoot.querySelector(COLLECTION) && visible(node) &&
+        node.getBoundingClientRect().height <= Math.max(innerHeight * 2, 1600)) component = node;
+    node = renderedParent(node);
+  }
+  if (component) return component;
   let target = el;
   while (INLINE.test(target.tagName) && target.parentElement && !target.parentElement.matches(PAGE)) target = target.parentElement;
   return target;
 }
 
-/** Only climb tight wrappers. A label must never authorize removing its whole feed. */
-function adContainer(el: HTMLElement): HTMLElement {
-  let target = block(el);
-  for (let depth = 0; depth < 4; depth++) {
-    const parent = target.parentElement;
-    if (!parent || parent.matches(PAGE) || parent.querySelector("h1,main,form") || parent.children.length > 6) break;
-    const r = parent.getBoundingClientRect();
-    const current = target.getBoundingClientRect();
-    if (r.width * r.height > innerWidth * innerHeight * 0.5 ||
-        r.width * r.height > Math.max(current.width * current.height * 2, 5000)) break;
-    const nodes = textNodes(parent);
-    if (nodes.filter(n => LABEL.test(n.data.trim())).length > 1 || nodes.map(n => n.data).join("").length > 3000) break;
-    target = parent;
-    if (target.matches("article,li,[role=dialog]")) break;
-  }
-  return target;
-}
-
-function inside(el: HTMLElement | null, candidates: Set<HTMLElement>): boolean {
-  for (let parent = el; parent; parent = parent.parentElement) if (candidates.has(parent)) return true;
-  return false;
-}
-
-export function discover(root: Element): HTMLElement[] {
+export function discover(root: Element, onShadow?: (root: ShadowRoot) => void): HTMLElement[] {
   if (root.closest(EXCLUDED)) return [];
-  const ads = new Set<HTMLElement>();
-  const elements = [root, ...root.querySelectorAll(`${AD_SELECTOR},[id],[class],a[href]`)];
-  for (const el of elements) {
-    if (!visible(el) || el.matches(PAGE)) continue;
-    if (el.matches(AD_SELECTOR) || tokens(el).some(t => AD_TOKEN.test(t)) ||
-        (el.matches("a[href]") && knownHost(address(el.getAttribute("href")).host))) ads.add(adContainer(el));
-  }
-  const nodes = textNodes(root);
+  const isItem = itemBoundaries(visible);
+  const media: HTMLElement[] = [];
+  const nodes = textNodes(root, onShadow, element => {
+    if (element.matches(MEDIA) && visible(element)) media.push(element);
+  });
+  const blocks = new Set<HTMLElement>();
   for (const node of nodes) {
-    if (LABEL.test(node.data.trim())) ads.add(adContainer(node.parentElement!));
-  }
-  const outerAds = new Set([...ads].filter(el => !inside(el.parentElement, ads)));
-  const blocks = new Set<HTMLElement>(outerAds);
-  for (const node of nodes) {
-    const target = block(node.parentElement!);
-    if (target.matches(PAGE) || inside(target, outerAds)) continue;
+    const target = block(node.parentElement!, isItem);
+    if (target.matches(PAGE)) continue;
     blocks.add(target);
   }
-  // Prefer descendants for ordinary content, unlike coherent ad cards.
+  // Every rendered media block is eligible, including benign frames. Jev alone
+  // determines whether its available metadata supports removal.
+  for (const element of media) blocks.add(block(element, isItem));
+  // Candidate discovery is intentionally semantic-neutral; Jev classifies every block.
   for (const el of blocks) {
     for (let parent = el.parentElement; parent; parent = parent.parentElement) {
-      if (!outerAds.has(parent)) blocks.delete(parent);
+      if (blocks.has(parent)) blocks.delete(parent);
     }
   }
   return [...blocks];
 }
 
 export function evidence(el: HTMLElement): Evidence {
-  const fullText = text(el);
-  const anchors = el.matches("a[href]") ? [el] : [...el.querySelectorAll("a[href]")];
+  const anchors: HTMLElement[] = [];
+  const media: HTMLElement[] = [];
+  const nodes = textNodes(el, undefined, element => {
+    if (!visible(element)) return;
+    if (element.matches("a[href]")) anchors.push(element);
+    if (element.matches(MEDIA)) media.push(element);
+  });
+  const mediaDescriptions = media.map(node => node.getAttribute("alt") || node.getAttribute("title") || "");
+  const fullText = [...nodes.map(node => node.data.trim()), ...mediaDescriptions].join(" ").replace(/\s+/g, " ").trim();
   const links = anchors.filter(visible).map(a => {
     const destination = address(a.getAttribute("href"));
     return { label: text(a).slice(0, 160), destination_host: destination.host, destination_scheme: destination.scheme };
   });
-  const frame = el.matches("iframe") ? el : el.querySelector("iframe[src]");
-  const source = address(frame?.getAttribute("src") ?? null);
-  const label = textNodes(el).find(n => LABEL.test(n.data.trim()))?.data.trim() || "";
+  const frame = media.find(node => node.matches("iframe")) || media[0];
+  const source = address(frame?.getAttribute("src") ?? frame?.getAttribute("data") ?? null);
+  const label = nodes.find(n => LABEL.test(n.data.trim()))?.data.trim() || "";
   const attributes = [...new Set([el, frame].flatMap(node => node ? [...node.attributes].map(a => a.name) : []))]
     .filter(name => /^data-(ad(?:-|$)|sponsored$|actirise$)/.test(name)).slice(0, 8);
   // Provider attributes remain observable even when a managed ad iframe uses about:blank.
@@ -128,15 +147,4 @@ export function evidence(el: HTMLElement): Evidence {
       known_host: [source.host, ...links.map(l => l.destination_host)].some(knownHost), attributes, network },
     complete: fullText.length <= MAX_TEXT && links.length <= 8, text_truncated: fullText.length > MAX_TEXT,
   };
-}
-
-/** Preserve overlap at passage boundaries; all passages share one DOM removal target. */
-export function passages(text: string): string[] {
-  if (!text) return [""];
-  const parts: string[] = [];
-  for (let start = 0; start < text.length; start += 900) {
-    parts.push(text.slice(start, start + 1000));
-    if (start + 1000 >= text.length) break;
-  }
-  return parts;
 }

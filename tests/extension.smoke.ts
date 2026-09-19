@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
-import { chromium, type Request } from "playwright";
+import { chromium } from "playwright";
+import { observeJudgments } from "./observe-judgments";
 import type { Batch, Judgments, PageStats } from "../extension/src/contracts";
 import { localAPI, until } from "./api";
 
@@ -18,23 +19,22 @@ const context = await chromium.launchPersistentContext(profile, {
   args: [`--disable-extensions-except=${resolve("dist")}`, `--load-extension=${resolve("dist")}`],
 });
 type Observation = { batch: Batch; started: number; elapsed?: number; status?: number; response?: Judgments };
-const observations = new Map<Request, Observation>();
+const observations = new Map<object, Observation>();
 const errors: string[] = [];
 const results: { name: string; details?: unknown }[] = [];
 const publicPages: object[] = [];
 context.on("page", page => page.on("pageerror", error => {
   if (error.stack?.includes("chrome-extension://")) errors.push(error.message);
 }));
-// Observe real traffic only. Nothing is intercepted, fulfilled, delayed, or replaced.
-context.on("request", request => {
-  if (request.url() === `${api.url}/judge`) observations.set(request, { batch: request.postDataJSON() as Batch, started: performance.now() });
-});
-context.on("response", response => {
-  const observed = observations.get(response.request());
-  if (observed) void response.json().then(body => {
-    observed.status = response.status(); observed.elapsed = performance.now() - observed.started;
-    if (response.ok()) observed.response = body;
-  }).catch(() => {});
+// Forward genuine API responses unchanged; no substituted classifications.
+const observer = observeJudgments(api.url, batch => {
+  const observed = { batch, started: performance.now() };
+  observations.set(observed, observed);
+  return observed as Observation;
+}, (observed, status, result) => {
+  observed.status = status;
+  observed.elapsed = performance.now() - observed.started;
+  observed.response = result;
 });
 const worker = context.serviceWorkers()[0] || await context.waitForEvent("serviceworker");
 const extensionId = new URL(worker.url()).host;
@@ -92,7 +92,7 @@ let failed: string | null = null;
 try {
   await popup.goto(`chrome-extension://${extensionId}/popup.html`);
   await popup.locator("details summary").click();
-  await popup.locator("#apiBase").fill(api.url);
+  await popup.locator("#apiBase").fill(observer.url);
   await popup.locator("#save").click();
   await popup.waitForFunction(() => document.querySelector("#service-status")?.textContent?.includes("API ready"));
   await page.goto(pageUrl);
@@ -186,7 +186,7 @@ try {
   assert.equal(afterBoth.unsafe_content, beforeBoth.unsafe_content + 1);
   await add("long", "The school garden has flowers and butterflies. ".repeat(450) + SCAM);
   await page.waitForSelector("#long", { state: "detached" });
-  assert([...observations.values()].every(o => o.batch.candidates.length <= 20 && o.batch.candidates.every(c => c.text.length <= 1000)));
+  assert([...observations.values()].every(o => o.batch.candidates.length >= 1 && o.batch.candidates.length <= 20 && o.batch.candidates.every(c => c.text.length <= 24000)));
   pass("a gambling ad counts once with two reasons; unsafe text beyond the first batch is found");
 
   await api.stop();
@@ -287,6 +287,7 @@ try {
   console.error("Last judgments:", JSON.stringify([...observations.values()].slice(-2).map(o => ({ status: o.status, elapsed: o.elapsed, flagged: o.response?.results.filter(r => r.remove) })), null, 2));
 } finally {
   await context.close();
+  observer.stop();
   site.stop(true);
   await api.stop();
   await rm(profile, { recursive: true, force: true });

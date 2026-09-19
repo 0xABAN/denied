@@ -1,6 +1,7 @@
 """Loopback API. Hosting requires an explicit authentication/deployment boundary."""
 
 import asyncio
+import json
 from contextlib import asynccontextmanager
 import os
 import re
@@ -11,14 +12,15 @@ from typing import Literal
 import httpx
 import psycopg
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from dotenv import load_dotenv
 from pydantic import ValidationError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .judge import MODEL_VERSION, POLICY_VERSION, judge
-from .schemas import Batch
+from .schemas import Batch, Wave
 from . import telemetry
+from .dispatch import Admission
 
 
 def load_environment(path: str | os.PathLike[str] | None = None) -> None:
@@ -45,9 +47,14 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        async with httpx.AsyncClient(timeout=6, trust_env=False) as connection:
+        async with httpx.AsyncClient(timeout=15, trust_env=False,
+                                    # Waves are five seconds apart. The default five-second
+                                    # idle expiry forces new TLS handshakes on each wave.
+                                    limits=httpx.Limits(max_connections=600, max_keepalive_connections=100,
+                                                       keepalive_expiry=60)) as connection:
             app.state.client = connection
-            app.state.slots = asyncio.Semaphore(2)
+            app.state.slots = asyncio.Semaphore(600)
+            app.state.admission = Admission()
             app.state.storage_slots = asyncio.Semaphore(4)
             app.state.recording_error = None
             if recording:
@@ -89,20 +96,13 @@ def create_app() -> FastAPI:
                 raise Unavailable(413, "Request too large")
         return bytes(body)
 
-    @api.post("/judge")
-    async def evaluate(request: Request, background: BackgroundTasks):
+    async def evaluate_batch(batch: Batch, background: BackgroundTasks):
         try:
-            batch = Batch.model_validate_json(await read_body(request, 128 * 1024))
-        except ValidationError:
-            raise Unavailable(422, "Invalid judgment request") from None
-        if not key:
-            raise Unavailable(503, "Set TYPESAFE_API_KEY in the backend environment")
-
-        try:
-            # The overall deadline includes queue time.
-            async with asyncio.timeout(8), api.state.slots:
+            # Admission may wait for a rate window; inference gets its own deadline.
+            async with api.state.slots:
                 started = perf_counter()
-                judgments = await judge(api.state.client, batch, key, ad_threshold, safety_threshold)
+                judgments = await judge(api.state.client, batch, key, ad_threshold, safety_threshold,
+                                        admission=api.state.admission)
                 judge_ms = round((perf_counter() - started) * 1000)
         except (TimeoutError, httpx.TimeoutException):
             raise Unavailable(504, "Judgment timed out; content was not checked") from None
@@ -113,6 +113,49 @@ def create_app() -> FastAPI:
             rows = telemetry.prepare_judgments(batch, judgments, token, judge_ms, ad_threshold, safety_threshold, MODEL_VERSION)
             background.add_task(record_judgments, rows)
         return judgments
+
+    async def read_judgment_request(request: Request, schema):
+        try:
+            value = schema.model_validate_json(await read_body(request, 2_000_000))
+        except ValidationError:
+            raise Unavailable(422, "Invalid judgment request") from None
+        if not key:
+            raise Unavailable(503, "Set TYPESAFE_API_KEY in the backend environment")
+        return value
+
+    @api.post("/judge")
+    async def evaluate(request: Request, background: BackgroundTasks):
+        batch = await read_judgment_request(request, Batch)
+        return await evaluate_batch(batch, background)
+
+    @api.post("/judge-stream")
+    async def evaluate_wave(request: Request, background: BackgroundTasks):
+        """Avoid browser HTTP/1 connection queuing without holding fast results.
+
+        Each line settles one input batch by index. A failed batch does not erase
+        successful siblings; disconnecting cancels outstanding provider work.
+        """
+        wave = await read_judgment_request(request, Wave)
+
+        async def one(index, batch):
+            try:
+                result = await evaluate_batch(batch, background)
+                return {"index": index, "result": result.model_dump()}
+            except Unavailable as error:
+                return {"index": index, "error": error.message}
+
+        async def lines():
+            tasks = [asyncio.create_task(one(i, batch)) for i, batch in enumerate(wave.batches)]
+            try:
+                for completed in asyncio.as_completed(tasks):
+                    yield json.dumps(await completed) + "\n"
+            finally:
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+
+        return StreamingResponse(lines(), media_type="application/x-ndjson", background=background,
+                                 headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
     async def storage_call(function, *args):
         # Storage has its own slots/deadline and stays off the judgment response path.
