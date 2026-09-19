@@ -7,18 +7,15 @@
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <header><h1>denied.</h1><label class="toggle"><input id="enabled" type="checkbox"> Enabled</label></header>
+  <header><h1>denied.</h1></header>
   <section class="stats" aria-label="Removal counts">
     <div><strong id="page-total">0</strong><span>on this page</span></div>
     <div><strong id="all-total">0</strong><span>total removed</span></div>
   </section>
-  <p id="breakdown">0 ads · 0 unsafe</p>
   <p class="hint">A block can match both filters and is removed once.</p>
   <p id="page-status" role="status">Loading page status…</p>
   <p id="history-status" role="status"></p>
   <section class="options">
-    <label><input id="animate" type="checkbox"> Glow and pop animation</label>
-    <label><input id="toast" type="checkbox"> Removal notices</label>
     <label for="mode">Mode</label>
     <select id="mode"><option value="remove">Remove flagged content</option><option value="highlight">Highlight only (diagnostic)</option></select>
     <button id="rescan" type="button">Rescan page</button>
