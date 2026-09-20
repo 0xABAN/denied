@@ -85,6 +85,7 @@ try {
   assert.deepEqual(batchSizes.sort((a, b) => a - b), [1, 20], "21 blocks must produce one full batch and one remainder");
   await until(async () => await page.locator("#ad").count() === 0, "ad removed while ordinary response remains held", 3000);
   assert.equal(await page.locator(".ordinary").count(), 20);
+  const lateInsertedAt = performance.now();
   await page.evaluate(() => {
     const node = document.createElement("p");
     node.id = "late";
@@ -93,7 +94,8 @@ try {
   });
   await until(() => starts.some(start => start.late), "next wave starts while prior response remains held", 6500);
   const gap = starts.find(start => start.late)!.at - starts[0].at;
-  assert.ok(gap >= 4900, `wave must not start early: ${gap}ms`);
+  assert.ok(starts.find(start => start.late)!.at - lateInsertedAt < 2000,
+    "New content must not wait for the old five-second wave cooldown");
   assert.equal(starts.filter(start => !start.late).length, 2, "in-flight blocks must not be redispatched");
   const beforeRescan = starts.length;
   await worker.evaluate(async url => {

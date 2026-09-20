@@ -15,8 +15,10 @@ test("uses the full large-page inference batch", () => {
   expect(INFERENCE_BATCH_SIZE).toBe(600);
 });
 
-test("waits five seconds between inference starts", () => {
+test("dispatches inference without a wave cooldown", () => {
+  expect(INFERENCE_DELAY_MS).toBe(0);
   expect(inferenceDelay(null, 10_000)).toBe(0);
-  expect(inferenceDelay(10_000, 10_001)).toBe(INFERENCE_DELAY_MS - 1);
+  expect(inferenceDelay(10_000, 10_000)).toBe(0);
+  expect(inferenceDelay(10_000, 10_001)).toBe(0);
   expect(inferenceDelay(10_000, 15_000)).toBe(0);
 });

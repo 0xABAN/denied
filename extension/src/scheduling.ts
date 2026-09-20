@@ -1,4 +1,4 @@
-export const INFERENCE_DELAY_MS = 5_000;
+export const INFERENCE_DELAY_MS = 0;
 export const INFERENCE_BATCH_SIZE = 600;
 export const BLOCKS_PER_REQUEST = 20;
 

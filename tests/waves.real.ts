@@ -48,7 +48,7 @@ try {
   assert(requests.every(r => r.count >= 1 && r.count <= 20), "Each provider batch must contain at most twenty blocks");
   assert.equal(requests.length, Math.ceil((blockCount + 1) / 20));
   assert(requests[0].at - started < 2000, "First inference should start without the five-second startup delay");
-  if (blockCount > 600) assert(requests[30].at - requests[0].at >= 4900, "Second wave started too early");
+  if (blockCount > 600) assert(requests[30].at - requests[0].at < 4900, "Second wave must not wait five seconds");
   assert(statuses.every(status => status === 200), JSON.stringify({ statuses }));
   assert.equal(await page.locator('p[id^="ordinary-"]').count(), blockCount, "Ordinary content was removed");
   const beforeLate = statuses.length;
