@@ -116,14 +116,17 @@ def prepare_judgments(batch: Batch, judgments: Judgments, key: str, judge_ms: in
     return rows
 
 
-def insert_judgments(rows: list[dict]) -> None:
-    columns = list(rows[0])
-    statement = sql.SQL("INSERT INTO {table} ({columns}) VALUES ({values}) ON CONFLICT DO NOTHING").format(
-        table=table("judgments"), columns=sql.SQL(",").join(map(sql.Identifier, columns)),
-        values=sql.SQL(",").join(sql.Placeholder(name) for name in columns),
+def _insert_statement(name: str, row: dict) -> sql.Composed:
+    return sql.SQL("INSERT INTO {table} ({columns}) VALUES ({values}) ON CONFLICT DO NOTHING").format(
+        table=table(name), columns=sql.SQL(",").join(map(sql.Identifier, row)),
+        values=sql.SQL(",").join(sql.Placeholder(column) for column in row),
     )
+
+
+def insert_judgments(rows: list[dict]) -> None:
     with connect() as connection, connection.cursor() as cursor:
-        cursor.executemany(statement, ({**row, "links": Jsonb(row["links"]), "ad": Jsonb(row["ad"])} for row in rows))
+        cursor.executemany(_insert_statement("judgments", rows[0]),
+                           ({**row, "links": Jsonb(row["links"]), "ad": Jsonb(row["ad"])} for row in rows))
 
 
 def removal_row(item: Removal, key: str) -> dict:
@@ -165,13 +168,8 @@ def removal_row(item: Removal, key: str) -> dict:
 
 def insert(row: dict) -> None:
     values = {**row, "classifications": Jsonb(row["classifications"])}
-    columns = list(values)
-    statement = sql.SQL("INSERT INTO {table} ({columns}) VALUES ({values}) ON CONFLICT DO NOTHING").format(
-        table=table(), columns=sql.SQL(",").join(map(sql.Identifier, columns)),
-        values=sql.SQL(",").join(sql.Placeholder(name) for name in columns),
-    )
     with connect() as connection:
-        connection.execute(statement, values)
+        connection.execute(_insert_statement("removals", values), values)
 
 
 def recent(limit: int) -> list[dict]:
