@@ -181,8 +181,9 @@ export function evidence(el: HTMLElement, url = new URL(location.href)): Evidenc
     return descriptions;
   });
   const fullText = [...nodes.map(node => node.data.trim()), ...mediaDescriptions].join(" ").replace(/\s+/g, " ").trim();
-  const links = anchors.map(a => {
-    const destination = address(a.getAttribute("href"));
+  const destinations = anchors.map(a => address(a.getAttribute("href")));
+  const links = anchors.slice(0, 8).map((a, index) => {
+    const destination = destinations[index];
     return { label: text(a, isVisible).slice(0, 160), destination_host: destination.host, destination_scheme: destination.scheme };
   });
   const frame = media.find(node => node.matches("iframe")) || media[0];
@@ -193,12 +194,12 @@ export function evidence(el: HTMLElement, url = new URL(location.href)): Evidenc
   // Provider attributes remain observable even when a managed ad iframe uses about:blank.
   const network = attributes.includes("data-actirise") ? "Actirise" : "";
   return {
-    text: fullText.slice(0, MAX_TEXT), links: links.slice(0, 8),
+    text: fullText.slice(0, MAX_TEXT), links,
     ad: { tag: el.tagName.toLowerCase().slice(0, 20), tokens: tokens(el).join(" ").slice(0, 160), label: label.slice(0, 100),
       source_host: source.host, source_scheme: source.scheme,
-      known_host: [source.host, ...links.map(l => l.destination_host)].some(knownHost), attributes, network },
+      known_host: knownHost(source.host) || destinations.some(destination => knownHost(destination.host)), attributes, network },
     // A textless player has no safety metadata; a keep result does not check its contents.
-    complete: fullText.length <= MAX_TEXT && links.length <= 8 &&
+    complete: fullText.length <= MAX_TEXT && anchors.length <= 8 &&
       (fullText.length > 0 || !media.some(node => node.matches("video,iframe"))),
     text_truncated: fullText.length > MAX_TEXT,
     media_revisions: media.length ? [...media, ...anchors, ...media.flatMap(node => [...node.querySelectorAll("source")])]

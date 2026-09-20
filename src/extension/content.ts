@@ -69,24 +69,39 @@ function reset(): void {
 
 function collect(): void {
   for (const el of records.keys()) if (!el.isConnected) records.delete(el);
+  if (!roots.size) return;
   const found = new Set<HTMLElement>();
   for (const root of roots) if (root.isConnected) {
     discover(root, shadow => observer.observe(shadow, mutationOptions)).forEach(el => found.add(el));
   }
   roots.clear();
+  // Index only actual ancestry for this synchronous pass, not every target pair.
+  // Include discoveries that may become records before a containing item does.
+  const descendants = new Map<Element, HTMLElement[]>();
+  for (const child of new Set([...records.keys(), ...found])) {
+    for (let parent = renderedParent(child); parent; parent = renderedParent(parent)) {
+      const children = descendants.get(parent);
+      if (children) children.push(child);
+      else descendants.set(parent, [child]);
+    }
+  }
   const sorted = [...found].map(el => ({ el, distance: Math.abs(el.getBoundingClientRect().top) }))
     .sort((a, b) => a.distance - b.distance);
   for (const { el } of sorted) {
     // Only an item's owned regions supersede fragments. Replies can be physical
     // descendants without belonging to the parent post's classification/removal.
     let covered = false;
-    for (const [parent, target] of records) {
-      if (parent === el || !owns(parent, el)) continue;
+    for (let parent = renderedParent(el); parent; parent = renderedParent(parent)) {
+      if (!(parent instanceof HTMLElement)) continue;
+      const target = records.get(parent);
+      if (!target || !owns(parent, el)) continue;
       if (JSON.stringify(evidence(parent)) === target.fingerprint) covered = true;
       else records.delete(parent);
     }
     if (covered) continue;
-    for (const child of records.keys()) if (child !== el && owns(el, child)) records.delete(child);
+    for (const child of descendants.get(el) || []) {
+      if (records.has(child) && owns(el, child)) records.delete(child);
+    }
     const previous = records.get(el);
     // Retain enough targets to fill a wave; recycle checked offscreen targets.
     if (!previous && records.size >= MAX_BATCH * 2) {

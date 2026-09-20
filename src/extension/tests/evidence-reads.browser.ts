@@ -28,7 +28,22 @@ try {
       link.style.display = "";
       link.textContent = "Replacement";
       const changed = evidence(item);
-      return { firstReads, first, hidden, changed };
+      item.innerHTML = Array.from({ length: 9 }, (_, index) =>
+        `<a href="https://${index === 8 ? "doubleclick.net" : "example.com"}">Link ${index}</a>`).join(" ");
+      const firstText = item.querySelector("a")!.firstChild;
+      const lastText = item.querySelector("a:last-child")!.firstChild;
+      const data = Object.getOwnPropertyDescriptor(CharacterData.prototype, "data")!;
+      let payloadReads = 0;
+      let excessReads = 0;
+      Object.defineProperty(CharacterData.prototype, "data", { ...data, get() {
+        if (this === firstText) payloadReads++;
+        if (this === lastText) excessReads++;
+        return data.get!.call(this);
+      } });
+      try {
+        const overlinked = evidence(item);
+        return { firstReads, first, hidden, changed, overlinked, payloadReads, excessReads };
+      } finally { Object.defineProperty(CharacterData.prototype, "data", data); }
     } finally { window.getComputedStyle = original; }
   }, await build.outputs[0].text());
   assert.equal(result.firstReads, 1, "A snapshot must not repeat computed-style reads for the same link");
@@ -36,5 +51,10 @@ try {
   assert.equal(result.hidden.links.length, 0, "A subsequent snapshot must observe visibility changes");
   assert.equal(result.hidden.text, "Other text");
   assert.equal(result.changed.links[0].label, "Replacement", "A subsequent snapshot must observe text changes");
-  console.log("PASS: deduplicated DOM reads with fresh visibility and text on each snapshot");
+  assert.equal(result.overlinked.links.length, 8);
+  assert.equal(result.overlinked.complete, false, "Excess links remain explicitly unchecked");
+  assert.equal(result.overlinked.ad.known_host, true, "All destination hosts still contribute evidence");
+  assert(result.overlinked.text.includes("Link 8"), "Bounding labels must not drop visible target text");
+  assert(result.excessReads < result.payloadReads, "Do not extract link labels that cannot enter the payload");
+  console.log("PASS: bounded label reads, complete host evidence, and fresh visibility/text snapshots");
 } finally { await browser.close(); }
