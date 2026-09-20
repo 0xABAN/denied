@@ -1,4 +1,4 @@
-import { renderedParent } from "../scan";
+import { renderedParent } from "../dom";
 
 type Lease = { animation: Animation; users: number };
 const active = new WeakMap<Element, Lease>();

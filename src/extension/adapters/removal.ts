@@ -1,5 +1,6 @@
 import { OWN } from "../contracts";
-import { ownershipAttributes, renderedParent, scopeTree } from "./index";
+import { ownershipAttributes } from "./index";
+import { renderedParent, scopeTree } from "../dom";
 import type { ItemScope } from "./types";
 
 const ATTRIBUTES = [...new Set([...ownershipAttributes(), "class", "style", "hidden", "type", "slot", "title", "alt",

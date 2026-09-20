@@ -1,6 +1,7 @@
 import { OWN, type Decision, type Settings } from "./contracts";
 import { removeWithMotion } from "./motion/removal";
-import { ownership, scopeTree, type ItemScope } from "./adapters";
+import { ownership, type ItemScope } from "./adapters";
+import { scopeTree } from "./dom";
 import { removalGuard } from "./adapters/removal";
 
 const ROSE = "#e11d48";

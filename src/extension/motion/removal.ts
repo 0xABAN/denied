@@ -2,7 +2,7 @@ import { type Settings } from "../contracts";
 import { prepareBurst, type Burst } from "./burst";
 import { createGlint } from "./glint";
 import { releaseOverflowClips } from "./overflow";
-import { scopeTree } from "../adapters";
+import { scopeTree } from "../dom";
 import { motionShadow } from "./surface";
 
 const SPIN_MS = 600;

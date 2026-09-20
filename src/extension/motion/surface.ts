@@ -1,4 +1,4 @@
-import { renderedParent } from "../scan";
+import { renderedParent } from "../dom";
 
 /** Match the nearest painted surface, including slotted and shadow content.
  * This chooses decorative contrast, never a filtering or ownership decision.

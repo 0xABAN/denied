@@ -1,8 +1,8 @@
 import { OWN, type Candidate } from "./contracts";
 import { COLLECTION, itemBoundaries } from "./grouping";
-import { adapterFor, containsRendered, ownership, ownershipFingerprint, ownershipResolver,
-  protectedByAdapter, renderedChildren, renderedParent, type ItemScope, type SiteAdapter } from "./adapters";
-export { renderedParent } from "./adapters";
+import { adapterFor, ownership, ownershipFingerprint, ownershipResolver,
+  protectedByAdapter, type ItemScope, type SiteAdapter } from "./adapters";
+import { containsRendered, renderedChildren, renderedParent } from "./dom";
 
 const EXCLUDED = `script,style,noscript,template,head,svg,input,textarea,select,[contenteditable]:not([contenteditable=false]),[role=textbox],[hidden],[${OWN}]`;
 const PAGE = "html,body,main,nav,header,footer,form,ul,ol,table";

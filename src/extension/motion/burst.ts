@@ -1,4 +1,5 @@
 import { OWN } from "../contracts";
+import { renderedChildren } from "../dom";
 import { isDarkSurface, motionShadow } from "./surface";
 
 const MAX_LAYERS = 4;
@@ -66,11 +67,10 @@ export function prepareBurst(element: HTMLElement, peakScale: number): Burst | u
         ink!.roundRect(rect.left - left, rect.top - top, rect.width, rect.height, radius);
         ink!.fill();
       }
-      if (node instanceof HTMLSlotElement) {
-        const assigned = node.assignedNodes({ flatten: true });
-        (assigned.length ? assigned : [...node.childNodes]).forEach(visit);
-      } else if (node.shadowRoot) [...node.shadowRoot.childNodes].forEach(visit);
-      else [...node.childNodes].forEach(visit);
+      for (const child of renderedChildren(node)) {
+        if (visited >= 800) break;
+        visit(child);
+      }
     } else if (node instanceof Text && node.parentElement) {
       const style = getComputedStyle(node.parentElement);
       ink!.font = style.font || `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
