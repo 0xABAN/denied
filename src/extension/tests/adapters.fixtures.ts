@@ -57,6 +57,22 @@ export const adapterFixtures = ([
     item: '<div data-item-id="$id" data-fixture="$id"><span data-testid="SenderPersona">Example sender</span><div aria-label="Message body" class="probe">$text</div><button>Actions</button></div>' },
 ] as const).filter(fixture => fixture.site !== "pinterest"); // Keep the fixture while its adapter is disabled.
 
+/** Current public YouTube search structure, with synthetic titles and destinations. */
+export function youtubeShortsShelf(id: string, cards: [string, string][]): string {
+  return `<grid-shelf-view-model id="${id}">
+    <yt-section-header-view-model><yt-shelf-header-layout><h2>Shorts</h2></yt-shelf-header-layout></yt-section-header-view-model>
+    <div><div class="ytGridShelfViewModelGridShelfRow">
+      ${cards.map(([key, title]) => `<div class="ytGridShelfViewModelGridShelfItem"><div>
+        <ytm-shorts-lockup-view-model-v2 id="${key}"><ytm-shorts-lockup-view-model>
+          <a href="/shorts/${key}"><img alt=""></a>
+          <div><h3><a href="/shorts/${key}">${title}</a></h3><span>Example channel</span><button>Actions</button></div>
+        </ytm-shorts-lockup-view-model></ytm-shorts-lockup-view-model-v2>
+      </div></div>`).join("")}
+    </div><div class="ytGridShelfViewModelGridShelfRow"></div></div>
+    <div class="ytGridShelfViewModelGridShelfBottomButtonContainer"><div><button>Show more</button></div></div>
+  </grid-shelf-view-model>`;
+}
+
 export function fixturePage(fixture: typeof adapterFixtures[number]): string {
   const item = (id: string, text: string) => fixture.item.replaceAll("$id", id).replaceAll("$text", text);
   return `<!doctype html><html><head><title>denied adapter fixture</title><style>

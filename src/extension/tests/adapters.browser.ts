@@ -1,7 +1,7 @@
 /** Actual Chromium ownership contracts. These fixture tests do not assert live-site support. */
 import assert from "node:assert/strict";
 import { chromium } from "playwright";
-import { adapterFixtures, fixturePage } from "./adapters.fixtures";
+import { adapterFixtures, fixturePage, youtubeShortsShelf } from "./adapters.fixtures";
 import { adapterVariants } from "./adapters.variants";
 
 const scripts: Record<string, string> = {};
@@ -188,6 +188,73 @@ try {
     }, fixture.url);
     assert.deepEqual(shared, { result: true, body: false, shared: true, next: true, classifiedSharedIdentity: false }, `${site}: shared identity`);
   }
+
+  const shorts = youtubeShortsShelf("shorts-shelf", [["first-short", "Tickets for sale."], ["last-short", "Tickets for sale."]]);
+  for (const retained of ["", '<ytm-shorts-lockup-view-model hidden><a href="/shorts/unchecked">Unchecked Short</a></ytm-shorts-lockup-view-model>',
+    '<p>Unrecognized content</p>', '<input value="DO_NOT_SEND">', '<div contenteditable></div>', '<div id="shadow-content"></div>']) {
+    await page.setContent(`<style>grid-shelf-view-model,ytm-shorts-lockup-view-model-v2 {display:block} img {width:30px;height:30px}</style>
+      <nav id="navigation">Keep navigation</nav>${shorts}<p id="neighbor">Keep this result</p>`);
+    const result = await page.evaluate(async retained => {
+      const url = new URL("https://www.youtube.com/results?search_query=example");
+      const api = (window as any).adapters;
+      const effects = (window as any).effects;
+      const shelf = document.getElementById("shorts-shelf")!;
+      const first = document.getElementById("first-short")!;
+      const last = document.getElementById("last-short")!;
+      const scope = api.ownership(first.querySelector("h3 a"), url);
+      if (scope?.key !== first || scope.nodes.length !== 1 || scope.nodes[0] !== first) return { wholeCard: false };
+      const evidence = (window as any).scan.evidence(first, url);
+      const discovered = (window as any).scan.discover(shelf, undefined, url);
+      const stale = await effects.removeScope(scope, { animate: false }, () => false);
+      const staleRetained = first.isConnected && shelf.isConnected;
+      const removedFirst = await effects.removeScope(scope, { animate: false }, () => true);
+      const remainingPreserved = shelf.isConnected && last.isConnected;
+      // A last-card removal must re-check new, hidden, private and shadow content.
+      shelf.querySelector(".ytGridShelfViewModelGridShelfRow")!.insertAdjacentHTML("beforeend", retained);
+      document.getElementById("shadow-content")?.attachShadow({ mode: "open" }).append(document.createElement("video"));
+      const removedLast = await effects.removeScope(api.ownership(last, url), { animate: false }, () => true);
+      return { wholeCard: true, stale, staleRetained, removedFirst, removedLast, remainingPreserved,
+        discovered: discovered.includes(first) && discovered.includes(last),
+        evidence: evidence.text.includes("Tickets for sale") && !evidence.text.includes("Shorts") && !evidence.text.includes("Show more"),
+        shelfRetained: shelf.isConnected, neighbors: Boolean(document.getElementById("navigation") && document.getElementById("neighbor")) };
+    }, retained);
+    assert.deepEqual(result, { wholeCard: true, stale: false, staleRetained: true, removedFirst: true, removedLast: true,
+      remainingPreserved: true, discovered: true, evidence: true, shelfRetained: Boolean(retained), neighbors: true },
+      "Shorts ownership and empty-shelf cleanup must preserve unchecked or independent content");
+  }
+
+  for (const wrapper of ["legacy", "rich-item"]) {
+    await page.setContent(shorts);
+    const whole = await page.evaluate(wrapper => {
+      const original = document.getElementById("first-short")!;
+      let key: Element;
+      if (wrapper === "legacy") {
+        key = original.firstElementChild!;
+        original.replaceWith(key);
+      } else {
+        key = document.createElement("ytd-rich-item-renderer");
+        original.replaceWith(key);
+        key.append(original);
+      }
+      const scope = (window as any).adapters.ownership(key.querySelector("h3 a"), new URL("https://www.youtube.com/"));
+      return scope?.key === key && scope.nodes.length === 1 && scope.nodes[0] === key;
+    }, wrapper);
+    assert(whole, `${wrapper}: nested Shorts renderers must not split an existing whole-card boundary`);
+  }
+
+  await page.setContent(youtubeShortsShelf("shorts-shelf", [["last-short", "Tickets for sale."]]));
+  const repopulated = await page.evaluate(async () => {
+    customElements.define("ytm-shorts-lockup-view-model-v2", class extends HTMLElement {
+      disconnectedCallback() {
+        if (this.id === "last-short") document.querySelector("#shorts-shelf .ytGridShelfViewModelGridShelfRow")
+          ?.insertAdjacentHTML("beforeend", '<ytm-shorts-lockup-view-model id="new-short"><a href="/shorts/new">New unchecked Short</a></ytm-shorts-lockup-view-model>');
+      }
+    });
+    const scope = (window as any).adapters.ownership(document.getElementById("last-short"), new URL("https://www.youtube.com/"));
+    const removed = await (window as any).effects.removeScope(scope, { animate: false }, () => true);
+    return { removed, retained: Boolean(document.getElementById("shorts-shelf") && document.getElementById("new-short")) };
+  });
+  assert.deepEqual(repopulated, { removed: true, retained: true }, "Synchronous shelf repopulation must survive cleanup");
 
   const watch = `<ytd-watch-flexy id="watch"><div id="player-container-outer"><video muted></video></div>
     <ytd-watch-metadata><div id="above-the-fold"><div id="title"><h1>Example video</h1></div></div><div id="description">Example description.</div></ytd-watch-metadata>

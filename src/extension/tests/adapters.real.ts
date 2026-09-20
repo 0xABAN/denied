@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { launchExtension } from "./browser";
 import { judgmentsFrom, type Batch, type Judgments, type PageStats } from "../contracts";
-import { adapterFixtures, fixturePage } from "./adapters.fixtures";
+import { adapterFixtures, fixturePage, youtubeShortsShelf } from "./adapters.fixtures";
 import { adapterVariants } from "./adapters.variants";
 import { localAPI, until } from "./api";
 import { observeJudgments } from "./observe-judgments";
@@ -54,6 +54,16 @@ const site = Bun.serve({ hostname: "127.0.0.1", port: 0, tls: { key: Bun.file(ke
       <style>[data-fixture],[data-retain] { display:block } img { width:120px;height:70px }</style>
       <nav id="navigation">Navigation</nav>
       ${watchCard.html.replaceAll("KEEP_NEIGHBOR", "The school garden has flowers and butterflies.").replaceAll("KEEP_VIEW_ALL", "View all")}
+      <form id="composer"><textarea>DO_NOT_SEND_DRAFT</textarea></form>`;
+  }
+  if (fixture.site === "youtube" && url.searchParams.has("shorts")) {
+    const sale = "Tickets for sale. Send me a message to buy them for $40.";
+    html = `<!doctype html><title>denied adapter fixture</title><style>
+      grid-shelf-view-model,ytm-shorts-lockup-view-model-v2 {display:block} img {width:60px;height:40px}
+      </style><nav id="navigation">Navigation</nav>
+      ${youtubeShortsShelf("empty-shorts", [["short-ad-one", sale], ["short-ad-two", sale]])}
+      ${youtubeShortsShelf("mixed-shorts", [["short-ad-three", sale], ["short-keep", "The school garden has flowers and butterflies."]])}
+      ${youtubeShortsShelf("loading-shorts", [])}
       <form id="composer"><textarea>DO_NOT_SEND_DRAFT</textarea></form>`;
   }
   // The tiny badge, not a sales pitch in the body, must identify the whole X post.
@@ -124,6 +134,27 @@ try {
     assert.equal((await stats()).unsafe_content, 1);
     console.log(`PASS: ${variant.renderer}, real provider, complete card removed and neighboring video preserved`);
   }
+
+  for (const animate of [false, true]) {
+    await extension.configure({ animate });
+    const before = observations.length;
+    const stats = await navigate(new URL("https://www.youtube.com/results?shorts=1"));
+    await until(async () => await page.locator("#empty-shorts, #short-ad-three").count() === 0,
+      "real Shorts removals also clear the empty shelf", 30000);
+    await until(async () => (await stats()).pending === 0, "Shorts judgments settled");
+    assert.equal(await page.locator("#mixed-shorts #short-keep").count(), 1, "Kept Short must retain its shelf");
+    assert.equal(await page.locator("#mixed-shorts h2").textContent(), "Shorts");
+    assert.equal(await page.locator("#mixed-shorts .ytGridShelfViewModelGridShelfBottomButtonContainer button").textContent(), "Show more");
+    assert.equal(await page.locator("#loading-shorts").count(), 1, "Initially empty shelves are not filtered content");
+    for (const id of ["navigation", "composer"]) assert.equal(await page.locator(`#${id}`).count(), 1);
+    assert.equal((await stats()).total, 3, "Shelf cleanup must not count as another removal");
+    assert.equal((await stats()).advertising, 3);
+    const results = observations.slice(before).flatMap(record => record.result?.results || []);
+    assert.equal(results.filter(result => result.remove).length, 3, "Require three actual positive judgments");
+    assert(results.some(result => !result.remove), "Require actual keep judgments");
+    console.log(`PASS: real Shorts judgments, empty shelf cleanup, mixed/loading shelf preservation, exact counts; animate=${animate}`);
+  }
+  await extension.configure({ animate: false });
 
   const stats = await navigate(new URL("https://www.youtube.com/watch?v=example"));
   await page.evaluate(() => (window as any).started);

@@ -3,7 +3,7 @@ import { type Settings } from "./settings";
 import { removeWithMotion } from "./motion/removal";
 import { ownership, type ItemScope } from "./adapters";
 import { scopeTree } from "./dom";
-import { removalGuard } from "./adapters/removal";
+import { removalGuard, removeEmptyShortsShelf } from "./adapters/removal";
 
 const ROSE = "#e11d48";
 const highlights = new Map<HTMLElement, () => void>();
@@ -64,8 +64,11 @@ export async function removeScope(scope: ItemScope, settings: Settings, current:
                                   applicable: () => boolean = current): Promise<boolean> {
   if (!current()) return false;
   if (scope.nodes.length === 1 && scope.nodes[0] instanceof HTMLElement) {
+    const parent = scope.key.parentElement;
     pauseMedia(scope.nodes[0]);
-    return removeWithMotion(scope.nodes[0], settings, current);
+    const removed = await removeWithMotion(scope.nodes[0], settings, current);
+    if (removed) removeEmptyShortsShelf(scope, parent);
+    return removed;
   }
 
   const intact = removalGuard(scope);

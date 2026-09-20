@@ -8,6 +8,8 @@ export const adapters: readonly SiteAdapter[] = [
     rules: [
       { selector: "ytd-video-renderer, ytd-rich-item-renderer, ytd-compact-video-renderer, ytd-grid-video-renderer, ytd-playlist-video-renderer, " +
           "ytd-watch-card-compact-video-renderer, ytd-watch-card-hero-video-renderer, " +
+          "ytm-shorts-lockup-view-model-v2:not(ytd-rich-item-renderer *), " +
+          "ytm-shorts-lockup-view-model:not(ytm-shorts-lockup-view-model-v2 *, ytd-rich-item-renderer *), " +
           "yt-lockup-view-model:not(ytd-rich-item-renderer yt-lockup-view-model)",
         content: 'a[href*="/watch"], a[href*="/shorts/"]' },
       { selector: "ytd-reel-video-renderer", content: "video", preserve: "ytd-comments, ytd-comment-thread-renderer" },

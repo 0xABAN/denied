@@ -8,6 +8,34 @@ const ATTRIBUTES = [...new Set([...ownershipAttributes(), "class", "style", "hid
 const PRIVATE = "script,style,noscript,template,input,textarea,select,[contenteditable]:not([contenteditable=false]),[role=textbox]";
 const children = (node: Node) => [...node.childNodes].filter(child => !(child instanceof Element && child.hasAttribute(OWN)));
 
+/** Remove only a known, emptied Shorts grid after an actual whole-card deletion.
+ * The saved parent survives card removal. Re-check live contents, including
+ * hidden/new cards; never treat an empty-looking collection as a judgment.
+ */
+export function removeEmptyShortsShelf(scope: ItemScope, parent: Element | null): void {
+  const shorts = "ytm-shorts-lockup-view-model-v2, ytm-shorts-lockup-view-model";
+  if (scope.adapter !== "youtube" || scope.key.isConnected || !parent?.isConnected ||
+      !(scope.key.matches(shorts) || scope.key.querySelector(shorts))) return;
+
+  const shelf = parent.closest("grid-shelf-view-model");
+  if (!shelf || shelf.querySelector(`input,textarea,select,[contenteditable]:not([contenteditable=false]),[role=textbox],nav,[role=navigation],[${OWN}]`)) return;
+
+  const parts = [...shelf.children];
+  const grids = parts.filter(node => node.matches("div") && node.querySelector(":scope > .ytGridShelfViewModelGridShelfRow"));
+  if (grids.length !== 1 || parts.some(node => node !== grids[0] &&
+      !node.matches("yt-section-header-view-model,div.ytGridShelfViewModelGridShelfBottomButtonContainer"))) return;
+  if ([shelf, ...shelf.querySelectorAll("*")].some(node => node.shadowRoot)) return;
+
+  // Only whitespace and plain layout divs may remain in the card area. This
+  // retains unknown renderers, media, loading indicators and private fields
+  // without reading drafts or the contents of opaque components.
+  const grid = grids[0];
+  if ([grid, ...grid.querySelectorAll("*")].some(node => !(node instanceof HTMLDivElement) ||
+      node.matches("[role],[contenteditable],[slot],[aria-label],[aria-description],[title]"))) return;
+  if (grid.textContent?.trim() || [...shelf.childNodes].some(node => node instanceof Text && node.data.trim())) return;
+  shelf.remove();
+}
+
 /** Guard a synchronous multi-root commit against custom-element callbacks.
  * Only our already-removed nodes may disappear. Snapshot structure/owned visible
  * text, never input values, drafts, or the contents of preserved conversations.
