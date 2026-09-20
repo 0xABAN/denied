@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { chromium } from "playwright";
 
-const bundle = await Bun.build({ entrypoints: ["extension/src/scan.ts"], target: "browser", format: "esm" });
+const bundle = await Bun.build({ entrypoints: ["src/extension/scan.ts"], target: "browser", format: "esm" });
 assert(bundle.success);
 const script = await bundle.outputs[0].text();
 const browser = await chromium.launch({ channel: "chromium", headless: true });

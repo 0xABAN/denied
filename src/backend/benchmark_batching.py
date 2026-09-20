@@ -20,7 +20,7 @@ from denied.schemas import Batch, Noul
 
 
 async def main():
-    examples = json.loads((Path(__file__).parent.parent / "tests/cases.json").read_text())
+    examples = json.loads((Path(__file__).resolve().parent / "tests/cases.json").read_text())
     examples += [dict(name=f"garden {i}", text=f"School garden plot {i} has flowers and butterflies.",
                       label="", ad=False, unsafe=False) for i in range(11)]
     examples.append(dict(name="textless managed ad", text="", label="", ad=True, unsafe=False))

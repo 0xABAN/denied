@@ -1,7 +1,7 @@
 /** Actual extension -> FastAPI -> Jev metadata filtering; no inspected video pixels. */
 import assert from "node:assert/strict";
 import { launchExtension } from "./browser";
-import type { Batch, Judgments, PageStats } from "../extension/src/contracts";
+import type { Batch, Judgments, PageStats } from "../contracts";
 import { localAPI, until } from "./api";
 import { observeJudgments } from "./observe-judgments";
 

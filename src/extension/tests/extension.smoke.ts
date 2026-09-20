@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { launchExtension } from "./browser";
 import { observeJudgments } from "./observe-judgments";
-import type { Batch, Judgments, PageStats } from "../extension/src/contracts";
+import type { Batch, Judgments, PageStats } from "../contracts";
 import { localAPI, until } from "./api";
 
 const publicOnly = process.argv.includes("--public-only");
@@ -12,7 +12,7 @@ const publicURLs = process.argv.filter(arg => /^https:\/\//.test(arg));
 const SCAM = "Your bank account will be deleted in ten minutes. Reply with your password and verification code so our agent can save it.";
 const GAMBLING = "Join our online casino and place real-money bets to win cash prizes.";
 const api = await localAPI();
-const site = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch() { return new Response(Bun.file("tests/page.html")); } });
+const site = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch() { return new Response(Bun.file("src/extension/tests/page.html")); } });
 
 type Observation = { batch: Batch; started: number; elapsed?: number; status?: number; response?: Judgments };
 const observations = new Map<object, Observation>();

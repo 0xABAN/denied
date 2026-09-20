@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { chromium } from "playwright";
 
 const bundles = await Promise.all(["scan", "effects"].map(async name => {
-  const bundle = await Bun.build({ entrypoints: [`extension/src/${name}.ts`], target: "browser", format: "esm" });
+  const bundle = await Bun.build({ entrypoints: [`src/extension/${name}.ts`], target: "browser", format: "esm" });
   assert(bundle.success);
   return [name, await bundle.outputs[0].text()] as const;
 }));

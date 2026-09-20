@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { chromium } from "playwright";
 
-const build = await Bun.build({ entrypoints: ["extension/src/effects.ts", "extension/src/scan.ts"],
+const build = await Bun.build({ entrypoints: ["src/extension/effects.ts", "src/extension/scan.ts"],
   target: "browser", format: "esm", splitting: false });
 assert(build.success);
 const scripts = await Promise.all(build.outputs.map(async file => ({ name: file.path, text: await file.text() })));

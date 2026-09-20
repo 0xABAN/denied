@@ -5,7 +5,7 @@ import { adapterFixtures, fixturePage } from "./adapters.fixtures";
 import { adapterVariants } from "./adapters.variants";
 
 const scripts: Record<string, string> = {};
-for (const [name, entrypoint] of Object.entries({ adapters: "extension/src/adapters/index.ts", scan: "extension/src/scan.ts", effects: "extension/src/effects.ts" })) {
+for (const [name, entrypoint] of Object.entries({ adapters: "src/extension/adapters/index.ts", scan: "src/extension/scan.ts", effects: "src/extension/effects.ts" })) {
   const bundle = await Bun.build({ entrypoints: [entrypoint], target: "browser", format: "esm" });
   assert(bundle.success);
   scripts[name] = await bundle.outputs[0].text();

@@ -36,7 +36,7 @@ try {
   await browser.close();
 }
 const child = Bun.spawn(["uv", "run", "--env-file", ".env", "python", "benchmark_boundaries.py", "--ownership", "--stdin"], {
-  cwd: resolve("backend"), stdin: "pipe", stdout: "inherit", stderr: "inherit",
+  cwd: resolve("src/backend"), stdin: "pipe", stdout: "inherit", stderr: "inherit",
 });
 child.stdin.write(JSON.stringify(cases));
 child.stdin.end();

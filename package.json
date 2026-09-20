@@ -5,13 +5,13 @@
   "scripts": {
     "build": "bun build.ts",
     "typecheck": "tsc --noEmit",
-    "test:api": "cd backend && uv run --env-file .env python -m unittest discover -s tests -v",
-    "test:extension": "bun tests/extension.smoke.ts",
-    "test:video": "bun tests/video.browser.ts && bun tests/video.real.ts",
-    "test:adapters": "bun tests/adapters.browser.ts && bun tests/adapters.real.ts",
-    "observe:adapters": "bun tests/adapters.live.ts",
-    "test:telemetry": "uv run --project backend --env-file backend/.env bun tests/telemetry.smoke.ts",
-    "test:live": "bun tests/live.ts"
+    "test:api": "cd src/backend && uv run --env-file .env python -m unittest discover -s tests -v",
+    "test:extension": "bun src/extension/tests/extension.smoke.ts",
+    "test:video": "bun src/extension/tests/video.browser.ts && bun src/extension/tests/video.real.ts",
+    "test:adapters": "bun src/extension/tests/adapters.browser.ts && bun src/extension/tests/adapters.real.ts",
+    "observe:adapters": "bun src/extension/tests/adapters.live.ts",
+    "test:telemetry": "uv run --project src/backend --env-file src/backend/.env bun src/extension/tests/telemetry.smoke.ts",
+    "test:live": "bun src/extension/tests/live.ts"
   },
   "devDependencies": {
     "@types/bun": "^1.3.0",

@@ -26,9 +26,9 @@ export async function localAPI(extraEnv: Record<string, string> = {}) {
   }
 
   async function start(overrides: Record<string, string> = {}) {
-    const envFile = await Bun.file("backend/.env").exists() ? ["--env-file", ".env"] : [];
+    const envFile = await Bun.file("src/backend/.env").exists() ? ["--env-file", ".env"] : [];
     process = Bun.spawn(["uv", "run", ...envFile, "uvicorn", "denied.app:app", "--host", "127.0.0.1", "--port", String(port), "--no-access-log"], {
-      cwd: resolve("backend"), env: { ...Bun.env, DENIED_RECORD_HISTORY: "0", ...extraEnv, ...overrides }, stdout: "ignore", stderr: "ignore",
+      cwd: resolve("src/backend"), env: { ...Bun.env, DENIED_RECORD_HISTORY: "0", ...extraEnv, ...overrides }, stdout: "ignore", stderr: "ignore",
     });
     try {
       await until(async () => {
@@ -38,7 +38,7 @@ export async function localAPI(extraEnv: Record<string, string> = {}) {
           if (!health.configured) throw new Error("KEY_MISSING");
           return true;
         } catch (error) {
-          if (error instanceof Error && error.message === "KEY_MISSING") throw new Error("Configure TYPESAFE_API_KEY in backend/.env; real tests cannot run without it.");
+          if (error instanceof Error && error.message === "KEY_MISSING") throw new Error("Configure TYPESAFE_API_KEY in src/backend/.env; real tests cannot run without it.");
           return false;
         }
       }, "real FastAPI startup");

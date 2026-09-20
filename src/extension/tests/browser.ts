@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium, type Page } from "playwright";
-import type { Settings } from "../extension/src/contracts";
+import type { Settings } from "../contracts";
 
 /** Use the real popup message boundary, including its startup and validation. */
 export async function configureExtension(popup: Page, changes: Partial<Settings>): Promise<Settings> {

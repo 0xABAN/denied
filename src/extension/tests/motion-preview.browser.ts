@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { chromium } from "playwright";
 
-const preview = Bun.spawn(["bun", "tests/motion-preview.ts"], { stdout: "pipe", stderr: "inherit" });
+const preview = Bun.spawn(["bun", "src/extension/tests/motion-preview.ts"], { stdout: "pipe", stderr: "inherit" });
 const browser = await chromium.launch({ channel: "chromium", headless: true });
 try {
   const reader = preview.stdout.getReader();

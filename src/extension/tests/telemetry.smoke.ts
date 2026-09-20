@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium, type BrowserContext } from "playwright";
-import type { Batch, Judgments, PageStats, Removal } from "../extension/src/contracts";
+import type { Batch, Judgments, PageStats, Removal } from "../contracts";
 import { localAPI, until } from "./api";
 import { observeJudgments } from "./observe-judgments";
 
@@ -13,7 +13,7 @@ assert(token && token.length >= 32, "Configure BACKEND_API_TOKEN; real storage t
 assert(Bun.env.PGHOST || Bun.env.TIGER_DATABASE_URL || Bun.env.TIMESCALE_SERVICE_URL, "A real Tiger database is required");
 const schema = `denied_test_${crypto.randomUUID().replaceAll("-", "")}`;
 const profile = await mkdtemp(join(tmpdir(), "denied-tiger-"));
-const site = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response(Bun.file("tests/page.html")) });
+const site = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response(Bun.file("src/extension/tests/page.html")) });
 const pageUrl = `http://127.0.0.1:${site.port}/`;
 const SCAM = "Your bank account will be deleted in ten minutes. Reply with your password and verification code so our agent can save it.";
 let api: Awaited<ReturnType<typeof localAPI>> | undefined;
@@ -64,7 +64,7 @@ with connect() as connection:
         ''').format(table=table()))
     else:
         connection.execute(sql.SQL('DROP SCHEMA IF EXISTS {} CASCADE').format(sql.Identifier(name)))
-`, action], { cwd: resolve("backend"), env: { ...Bun.env, DENIED_DB_SCHEMA: schema }, stdout: "ignore", stderr: "ignore" });
+`, action], { cwd: resolve("src/backend"), env: { ...Bun.env, DENIED_DB_SCHEMA: schema }, stdout: "ignore", stderr: "ignore" });
   assert.equal(await process.exited, 0, `Database ${action} failed in test schema ${schema}`);
 }
 async function post(value: unknown) {

@@ -19,7 +19,7 @@ const urls: Record<string, string> = {
 const selected = process.argv.slice(2);
 const entries = Object.entries(urls).filter(([id]) => !selected.length || selected.includes(id));
 assert(entries.length && selected.every(id => id in urls), "Choose adapter IDs, or omit arguments to survey all 26");
-const bundle = await Bun.build({ entrypoints: ["extension/src/adapters/index.ts"], target: "browser", format: "esm" });
+const bundle = await Bun.build({ entrypoints: ["src/extension/adapters/index.ts"], target: "browser", format: "esm" });
 assert(bundle.success);
 const script = await bundle.outputs[0].text();
 const browser = await chromium.launch({ channel: "chromium", headless: true });

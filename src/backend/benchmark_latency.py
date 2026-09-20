@@ -30,7 +30,7 @@ async def main():
     parser.add_argument("--keepalive-seconds", type=float, default=60,
                         help="Production uses 60; use 5 to reproduce connection-expiry overhead")
     options = parser.parse_args()
-    examples = json.loads((Path(__file__).resolve().parents[1] / "tests/cases.json").read_text())
+    examples = json.loads((Path(__file__).resolve().parent / "tests/cases.json").read_text())
     examples += [dict(text=f"The school garden plot {i} has flowers.", label="", ad=False, unsafe=False)
                  for i in range(20 - len(examples))]
     candidates = [dict(id=str(i), revision=1, text=e["text"], links=e.get("links", []),

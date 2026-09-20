@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { INFERENCE_BATCH_SIZE, INFERENCE_DELAY_MS, inferenceDelay, requestBatches } from "../extension/src/scheduling";
+import { INFERENCE_BATCH_SIZE, INFERENCE_DELAY_MS, inferenceDelay, requestBatches } from "../scheduling";
 
 test("groups a 600-block wave into thirty requests and retains partial batches", () => {
   const blocks = Array.from({ length: 600 }, (_, i) => i);

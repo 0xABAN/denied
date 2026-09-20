@@ -9,5 +9,5 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["build.ts", "extension/src/**/*.ts", "tests/**/*.ts"]
+  "include": ["build.ts", "src/extension/**/*.ts"]
 }

@@ -8,7 +8,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium } from "playwright";
-import { judgmentsFrom, type Batch, type Judgments, type PageStats } from "../extension/src/contracts";
+import { judgmentsFrom, type Batch, type Judgments, type PageStats } from "../contracts";
 import { adapterFixtures, fixturePage } from "./adapters.fixtures";
 import { adapterVariants } from "./adapters.variants";
 import { localAPI, until } from "./api";

@@ -14,14 +14,14 @@ You need Bun, uv, Chrome, and your own TypeSafe API key.
 # From the repository root:
 bun install
 bun run build
-cp -n backend/.env.example backend/.env
-chmod 600 backend/.env
+cp -n src/backend/.env.example src/backend/.env
+chmod 600 src/backend/.env
 ```
 
-Edit `backend/.env` and set `TYPESAFE_API_KEY`. The file is ignored by Git. Do not paste your key into the extension or commit it.
+Edit `src/backend/.env` and set `TYPESAFE_API_KEY`. The file is ignored by Git. Do not paste your key into the extension or commit it.
 
 ```sh
-cd backend
+cd src/backend
 uv sync
 uv run uvicorn denied.app:app --host 127.0.0.1 --port 8765
 ```
@@ -66,7 +66,7 @@ Independent replies, reviews, recommendations, drafts and shared author identity
 
 ## Optional Tiger Data judgment and removal history
 
-Keep using the same `denied.app:app` API. Set Tiger's `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, and `PGSSLMODE=require` in `backend/.env`. No separate database URL is needed. URL-only configurations can use `TIGER_DATABASE_URL` or `TIMESCALE_SERVICE_URL`; populated native `PG_*` settings take precedence.
+Keep using the same `denied.app:app` API. Set Tiger's `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, and `PGSSLMODE=require` in `src/backend/.env`. No separate database URL is needed. URL-only configurations can use `TIGER_DATABASE_URL` or `TIMESCALE_SERVICE_URL`; populated native `PG_*` settings take precedence.
 
 Set a private `BACKEND_API_TOKEN` of at least 32 characters. Generate one locally with `uv run python -c 'import secrets; print(secrets.token_urlsafe(32))'` and save it only in the ignored environment file. Keep that file mode `0600`. The API loads it without overriding exported shell settings. Restart the backend after editing it.
 
@@ -100,7 +100,7 @@ Kept and removed text may be sensitive. This demo has no automatic retention/del
 
 ## Verify
 
-Service tests require `TYPESAFE_API_KEY` in `backend/.env` and make real Jev calls. There are no mocked endpoints, substituted responses, or heuristic fallbacks. Provider availability, model changes, and public-page changes can cause failures.
+Service tests require `TYPESAFE_API_KEY` in `src/backend/.env` and make real Jev calls. There are no mocked endpoints, substituted responses, or heuristic fallbacks. Provider availability, model changes, and public-page changes can cause failures.
 
 ```sh
 # Repository root:
@@ -118,16 +118,16 @@ bun run observe:adapters
 # Focused real-provider extension check: removals, glass glint, shards, counters:
 bun run test:extension --motion-only
 # 600-block waves (20 blocks/request) and live shadow-root mutation coverage:
-bun tests/waves.real.ts
+bun src/extension/tests/waves.real.ts
 # Native removal renderer: monochrome output, cancellation, reduced motion, concurrency:
-bun tests/removal.browser.ts
+bun src/extension/tests/removal.browser.ts
 # Optional replayable animation-only preview (prints a local URL):
-bun tests/motion-preview.ts
+bun src/extension/tests/motion-preview.ts
 # Real provider and browser-transport latency (three 600-block waves each):
-bun tests/latency.real.ts
-cd backend && uv run --env-file .env python benchmark_latency.py
+bun src/extension/tests/latency.real.ts
+cd src/backend && uv run --env-file .env python benchmark_latency.py
 # Return to the repository root before the next command.
-cd ..
+cd ../..
 # Also requires real Tiger credentials and BACKEND_API_TOKEN:
 bun run test:telemetry
 ```
@@ -136,7 +136,7 @@ The API tests start actual loopback Uvicorn processes. They check labeled judgme
 
 The browser suite starts the API and loads the built extension in Chromium. It checks removals and benign-content preservation, private-input/URL exclusions, animation, changed text/links/protocols, stale responses, counters, and service-worker restart. An outage test stops the actual API, then restarts it.
 
-Provider connections stay alive for up to 60 idle seconds so intermittent waves do not repeatedly pay TLS setup costs. In a local real-provider measurement, warm 600-block waves had 255–281 ms median provider round trips; the browser-path test measured 267–285 ms median batch results and 405–476 ms for the complete wave. Cold waves were slower (727 ms in that browser run). These are observations, not latency guarantees. Animations intentionally add their own time after a positive judgment. The latency test's forwarding observer buffers delivery, so its batch timings measure backend results arriving at the observer, not DOM removal; `tests/incremental.real.ts` separately verifies incremental delivery and overlapping waves.
+Provider connections stay alive for up to 60 idle seconds so intermittent waves do not repeatedly pay TLS setup costs. In a local real-provider measurement, warm 600-block waves had 255–281 ms median provider round trips; the browser-path test measured 267–285 ms median batch results and 405–476 ms for the complete wave. Cold waves were slower (727 ms in that browser run). These are observations, not latency guarantees. Animations intentionally add their own time after a positive judgment. The latency test's forwarding observer buffers delivery, so its batch timings measure backend results arriving at the observer, not DOM removal; `src/extension/tests/incremental.real.ts` separately verifies incremental delivery and overlapping waves.
 
 The ordinary API/browser suites disable recording. The Tiger suite uses actual Chromium, FastAPI, Jev, and Tiger Data, creates a unique `denied_test_*` schema, and removes only that schema afterward. It checks every kept/flagged passage against actual API responses, single-date records and migration of legacy dates, text/scores/timing, duplicate delivery, receipt tampering, authenticated reads, highlights and canceled removals, restart persistence, and an actual refused database connection followed by recovery. It never writes test data into the production `denied` schema.
 
@@ -156,7 +156,7 @@ bun run test:live
 DENIED_API_URL=http://127.0.0.1:8766 bun run test:live
 ```
 
-This sends the 19 synthetic examples in `tests/cases.json` to the real provider, including violent-game titles, educational exceptions and an unfamiliar game name. It exits unsuccessfully if judgments differ from the labels. These are controlled inputs, not observations of live websites. Review individual mistakes before changing thresholds; this small fixture is not a general safety benchmark.
+This sends the 19 synthetic examples in `src/backend/tests/cases.json` to the real provider, including violent-game titles, educational exceptions and an unfamiliar game name. It exits unsuccessfully if judgments differ from the labels. These are controlled inputs, not observations of live websites. Review individual mistakes before changing thresholds; this small fixture is not a general safety benchmark.
 
 ### Recorded integration verification — policy 5
 
@@ -164,25 +164,25 @@ For the all-judgments/single-date change, typecheck/build, all seven real API te
 
 ## Architecture
 
-- `extension/src/adapters/`: 26 site-specific ownership definitions, protected boundaries and guarded multi-region removal.
-- `extension/src/scan.ts` and `extension/src/grouping.ts`: adapter-first discovery, generic boundaries, media-card association, and text/metadata evidence extraction.
-- `extension/src/content.ts`: bounded queue, revisions, retries, and stale-result rejection.
-- `extension/src/effects.ts`: notices, diagnostic labels, and the removal entry point.
-- `extension/src/motion/`: guarded accelerating spin with wobble and glass glint, layout collapse, and bounded monochrome shard rendering.
-- `extension/src/background.ts`: fixed API bridge, trusted settings, and cumulative counters.
-- `extension/src/transport.ts`: bounded streaming transport; coalesces up to 30 batches without holding completed results.
-- `extension/src/popup.ts`: the compact HTML/CSS settings interface.
-- `extension/src/contracts.ts`: shared types and boundary checks.
-- `backend/denied/app.py`: FastAPI lifecycle, loopback request checks, and deadlines.
-- `backend/denied/schemas.py`: bounded input and typed output.
-- `backend/denied/judge.py`: policy, 20-block Jev calls, and per-block removal decisions.
-- `backend/denied/telemetry.py` and `backend/schema.sql`: signed removal receipts, optional Tiger storage, and protected history/metrics reads.
+- `src/extension/adapters/`: 26 site-specific ownership definitions, protected boundaries and guarded multi-region removal.
+- `src/extension/scan.ts` and `src/extension/grouping.ts`: adapter-first discovery, generic boundaries, media-card association, and text/metadata evidence extraction.
+- `src/extension/content.ts`: bounded queue, revisions, retries, and stale-result rejection.
+- `src/extension/effects.ts`: notices, diagnostic labels, and the removal entry point.
+- `src/extension/motion/`: guarded accelerating spin with wobble and glass glint, layout collapse, and bounded monochrome shard rendering.
+- `src/extension/background.ts`: fixed API bridge, trusted settings, and cumulative counters.
+- `src/extension/transport.ts`: bounded streaming transport; coalesces up to 30 batches without holding completed results.
+- `src/extension/popup.ts`: the compact HTML/CSS settings interface.
+- `src/extension/contracts.ts`: shared types and boundary checks.
+- `src/backend/denied/app.py`: FastAPI lifecycle, loopback request checks, and deadlines.
+- `src/backend/denied/schemas.py`: bounded input and typed output.
+- `src/backend/denied/judge.py`: policy, 20-block Jev calls, and per-block removal decisions.
+- `src/backend/denied/telemetry.py` and `src/backend/schema.sql`: signed removal receipts, optional Tiger storage, and protected history/metrics reads.
 
 Bun bundles TypeScript; Chrome runs the output. The backend uses FastAPI, HTTPX, Pydantic, and Psycopg. There is no React, Next.js, second backend, or account system.
 
 ## Limits and privacy
 
-- Removal requires `ad_score >= 0.70`, `unsafe_score >= 0.80`, **or** `violent_entity_score >= 0.80` by default. These are uncalibrated model scores, not verified 70%/80% certainty. Higher thresholds trade fewer false removals for more missed targets. Set `DENIED_AD_THRESHOLD` and `DENIED_SAFETY_THRESHOLD` in `backend/.env` and restart the API; `/health` reports the active values.
+- Removal requires `ad_score >= 0.70`, `unsafe_score >= 0.80`, **or** `violent_entity_score >= 0.80` by default. These are uncalibrated model scores, not verified 70%/80% certainty. Higher thresholds trade fewer false removals for more missed targets. Set `DENIED_AD_THRESHOLD` and `DENIED_SAFETY_THRESHOLD` in `src/backend/.env` and restart the API; `/health` reports the active values.
 - All three questions receive page, link, and iframe-source hostnames and URL schemes. Domain reputation and HTTP/HTTPS are context, not allowlists or automatic decisions. A familiar domain or HTTPS does not guarantee child-appropriate content or exempt advertisements; unknown schemes remain unknown.
 - The browser starts scanning without an initial delay and dispatches waves of up to 600 blocks. The worker coalesces up to 30 twenty-block batches over an eight-millisecond collection window, then sends them through `/judge-stream` on one HTTP connection (splitting transports near the 2 MB body limit). The backend starts those provider requests in parallel and streams each batch result independently. This avoids Chrome's per-origin HTTP/1 connection queue. Wave starts have no artificial cooldown. Each block has separately identified advertising, direct-safety and violent-entity judgments; server-owned policy is included once per provider request.
 - Each completed batch updates the page immediately. Waves can overlap: another wave of up to 600 pending blocks can start immediately after the prior dispatch, even while earlier responses remain outstanding. In-flight revisions are not redispatched.

@@ -1,11 +1,11 @@
 // Opt-in evaluation. Sends only the synthetic cases below through the running Python API.
 import assert from "node:assert/strict";
-import { apiBase, judgmentsFrom, type Batch } from "../extension/src/contracts";
+import { apiBase, judgmentsFrom, type Batch } from "../contracts";
 
 const base = apiBase(process.env.DENIED_API_URL || "http://127.0.0.1:8765");
 const health = await fetch(`${base}/health`, { signal: AbortSignal.timeout(3000) }).then(r => r.json());
 if (!health.configured) throw new Error("Set TYPESAFE_API_KEY in the backend environment and restart the API first.");
-const cases = await Bun.file("tests/cases.json").json() as { name: string; text: string; label: string; ad: boolean; unsafe: boolean; links?: Batch["candidates"][number]["links"] }[];
+const cases = await Bun.file("src/backend/tests/cases.json").json() as { name: string; text: string; label: string; ad: boolean; unsafe: boolean; links?: Batch["candidates"][number]["links"] }[];
 const batch: Batch = {
   document_id: "live-evaluation", page_host: "controlled-fixture.test", page_scheme: "http",
   candidates: cases.map((c, i) => ({ id: String(i), revision: 1, text: c.text, links: c.links || [],

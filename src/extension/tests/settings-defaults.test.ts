@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { DEFAULTS } from "../extension/src/contracts";
-import { startupSettings } from "../extension/src/settings";
+import { DEFAULTS } from "../contracts";
+import { startupSettings } from "../settings";
 
 test("fresh installs start scanning with removal effects", () => {
   expect(DEFAULTS.enabled).toBe(true);

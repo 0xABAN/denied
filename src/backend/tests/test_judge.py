@@ -71,7 +71,7 @@ class ApiTests(unittest.TestCase):
             raise RuntimeError("A real TYPESAFE_API_KEY is required; use uv run --env-file .env.")
 
     def test_actual_independent_judgments(self):
-        examples = json.loads((Path(__file__).resolve().parents[2] / "tests/cases.json").read_text())
+        examples = json.loads((Path(__file__).resolve().parent / "cases.json").read_text())
         batch = copy.deepcopy(BATCH)
         batch["candidates"] = []
         for index, example in enumerate(examples):
@@ -157,7 +157,7 @@ class ApiTests(unittest.TestCase):
 
     def test_domain_and_scheme_context_do_not_override_content(self):
         # Hypothetical page contexts, actual provider judgments: not a scan of these websites.
-        examples = json.loads((Path(__file__).resolve().parents[2] / "tests/cases.json").read_text())
+        examples = json.loads((Path(__file__).resolve().parent / "cases.json").read_text())
         batch = copy.deepcopy(BATCH)
         batch["candidates"] = []
         for index in (0, 2):  # Benign school news and a sponsored gambling solicitation.

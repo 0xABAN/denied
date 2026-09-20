@@ -1,4 +1,4 @@
-import type { Batch, Judgments } from "../extension/src/contracts";
+import type { Batch, Judgments } from "../contracts";
 
 /** Forward genuine bytes unchanged while observing each result line.
  * Chrome's CDP cache does not reliably retain streamed worker response bodies.
