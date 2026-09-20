@@ -1,9 +1,6 @@
 /** Actual extension -> FastAPI -> Jev metadata filtering; no inspected video pixels. */
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { chromium } from "playwright";
+import { launchExtension } from "./browser";
 import type { Batch, Judgments, PageStats } from "../extension/src/contracts";
 import { localAPI, until } from "./api";
 import { observeJudgments } from "./observe-judgments";
@@ -44,16 +41,9 @@ const site = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request) {
     window.playbackStarted = window.playingVideo.play();
   </script></body></html>`, { headers: { "Content-Type": "text/html" } });
 } });
-const profile = await mkdtemp(join(tmpdir(), "denied-video-"));
-const context = await chromium.launchPersistentContext(profile, {
-  channel: "chromium", headless: true,
-  args: [`--disable-extensions-except=${resolve("dist")}`, `--load-extension=${resolve("dist")}`],
-});
+const extension = await launchExtension({ enabled: true, animate: false, toast: false, apiBase: observer.url });
+const { context, worker } = extension;
 try {
-  const worker = context.serviceWorkers()[0] || await context.waitForEvent("serviceworker");
-  await worker.evaluate(async apiBase => {
-    await chrome.storage.local.set({ settings: { enabled: true, animate: false, toast: false, mode: "remove", apiBase } });
-  }, observer.url);
   const page = await context.newPage();
   await page.goto(`http://127.0.0.1:${site.port}/`);
   await page.evaluate(() => (window as any).playbackStarted);
@@ -92,9 +82,8 @@ try {
   assert(!observations.some(record => record.batch.candidates.some(candidate => "media_revisions" in candidate)), "Local identity tokens stay out of API payloads");
   console.log("PASS: real Jev metadata removals, educational/neighbor preservation, unknown status, playback pause, source/description mutations, and URL privacy");
 } finally {
-  await context.close();
+  await extension.close();
   observer.stop();
   site.stop(true);
   await api.stop();
-  await rm(profile, { recursive: true, force: true });
 }

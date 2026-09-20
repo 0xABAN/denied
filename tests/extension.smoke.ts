@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { resolve, join } from "node:path";
-import { chromium } from "playwright";
+import { mkdir } from "node:fs/promises";
+import { launchExtension } from "./browser";
 import { observeJudgments } from "./observe-judgments";
 import type { Batch, Judgments, PageStats } from "../extension/src/contracts";
 import { localAPI, until } from "./api";
@@ -15,19 +13,12 @@ const SCAM = "Your bank account will be deleted in ten minutes. Reply with your 
 const GAMBLING = "Join our online casino and place real-money bets to win cash prizes.";
 const api = await localAPI();
 const site = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch() { return new Response(Bun.file("tests/page.html")); } });
-const profile = await mkdtemp(join(tmpdir(), "denied-real-"));
-const context = await chromium.launchPersistentContext(profile, {
-  channel: "chromium", headless: true, viewport: { width: 1100, height: 900 },
-  args: [`--disable-extensions-except=${resolve("dist")}`, `--load-extension=${resolve("dist")}`],
-});
+
 type Observation = { batch: Batch; started: number; elapsed?: number; status?: number; response?: Judgments };
 const observations = new Map<object, Observation>();
 const errors: string[] = [];
 const results: { name: string; details?: unknown }[] = [];
 const publicPages: object[] = [];
-context.on("page", page => page.on("pageerror", error => {
-  if (error.stack?.includes("chrome-extension://")) errors.push(error.message);
-}));
 // Forward genuine API responses unchanged; no substituted classifications.
 const observer = observeJudgments(api.url, batch => {
   const observed = { batch, started: performance.now() };
@@ -38,10 +29,12 @@ const observer = observeJudgments(api.url, batch => {
   observed.elapsed = performance.now() - observed.started;
   observed.response = result;
 });
-const worker = context.serviceWorkers()[0] || await context.waitForEvent("serviceworker");
-const extensionId = new URL(worker.url()).host;
+const extension = await launchExtension({ apiBase: observer.url, enabled: false }, { viewport: { width: 1100, height: 900 } });
+const { context, popup, configure } = extension;
+context.on("page", page => page.on("pageerror", error => {
+  if (error.stack?.includes("chrome-extension://")) errors.push(error.message);
+}));
 const page = await context.newPage();
-const popup = await context.newPage();
 let pageUrl = `http://127.0.0.1:${site.port}/`;
 let pageTab: number | undefined;
 
@@ -52,13 +45,13 @@ function pass(name: string, details?: unknown) {
 async function stats(debug = false): Promise<PageStats> {
   if (pageTab === undefined) {
     // Resolve once on loopback, where host permission exposes the URL. The tab ID survives navigation.
-    pageTab = await worker.evaluate(async url => {
+    pageTab = await popup.evaluate(async url => {
       const tab = (await chrome.tabs.query({})).find(t => t.url === url);
       if (tab?.id === undefined) throw new Error("Test tab missing");
       return tab.id;
     }, pageUrl);
   }
-  return worker.evaluate(({ id, debug }) => chrome.tabs.sendMessage(id, { type: "pageStats", debug }), { id: pageTab, debug });
+  return popup.evaluate(({ id, debug }) => chrome.tabs.sendMessage(id, { type: "pageStats", debug }), { id: pageTab, debug });
 }
 async function add(id: string, text: string) {
   await page.evaluate(({ id, text }) => {
@@ -78,7 +71,7 @@ async function addLongTag(id: string, text: string) {
 }
 async function rescan() {
   await stats();
-  await worker.evaluate(id => chrome.tabs.sendMessage(id!, { type: "rescan" }), pageTab);
+  await popup.evaluate(id => chrome.tabs.sendMessage(id!, { type: "rescan" }), pageTab);
 }
 function forTarget(token: string) {
   return [...observations.values()].flatMap(o => o.batch.candidates
@@ -90,19 +83,8 @@ async function checked(token: string) {
   await until(async () => (await stats()).pending === 0, `${token} settled`);
 }
 
-async function configure(changes: Record<string, unknown>) {
-  return popup.evaluate(async changes => {
-    const { settings } = await chrome.runtime.sendMessage({ type: "settings" });
-    const response = await chrome.runtime.sendMessage({ type: "saveSettings", settings: { ...settings, ...changes } });
-    if (response.error) throw new Error(response.error);
-    return response.settings;
-  }, changes);
-}
-
 let failed: string | null = null;
 try {
-  await popup.goto(`chrome-extension://${extensionId}/popup.html`);
-  await configure({ apiBase: observer.url, enabled: false });
   await page.goto(pageUrl);
   await page.bringToFront();
   await until(async () => Boolean(await stats().catch(() => null)), "content script ready");
@@ -301,11 +283,10 @@ try {
   console.error("FAILED:", failed);
   console.error("Last judgments:", JSON.stringify([...observations.values()].slice(-2).map(o => ({ status: o.status, elapsed: o.elapsed, flagged: o.response?.results.filter(r => r.remove) })), null, 2));
 } finally {
-  await context.close();
+  await extension.close();
   observer.stop();
   site.stop(true);
   await api.stop();
-  await rm(profile, { recursive: true, force: true });
   await mkdir("artifacts", { recursive: true });
   await Bun.write("artifacts/real-results.json", JSON.stringify({
     timestamp: new Date().toISOString(), provider: "jev-latest", results, publicPages, failed,
