@@ -1,7 +1,7 @@
 import { OWN, type Candidate } from "./contracts";
 import { COLLECTION, itemBoundaries } from "./grouping";
 import { adapterFor, containsRendered, ownership, ownershipFingerprint, ownershipResolver,
-  protectedByAdapter, renderedParent, type ItemScope, type SiteAdapter } from "./adapters";
+  protectedByAdapter, renderedChildren, renderedParent, type ItemScope, type SiteAdapter } from "./adapters";
 export { renderedParent } from "./adapters";
 
 const EXCLUDED = `script,style,noscript,template,head,svg,input,textarea,select,[contenteditable]:not([contenteditable=false]),[role=textbox],[hidden],[${OWN}]`;
@@ -55,35 +55,29 @@ export function owns(parent: HTMLElement, child: HTMLElement): boolean {
 }
 
 function textNodes(root: Node, onShadow?: (root: ShadowRoot) => void,
-                   onElement?: (element: Element) => void): Text[] {
+                   onElement?: (element: Element) => void,
+                   isVisible: typeof visible = visible): Text[] {
   const nodes: Text[] = [];
   const visited = new Set<Node>();
   const visit = (node: Node): void => {
     if (visited.has(node)) return;
     visited.add(node);
     if (node instanceof Text) {
-      if (node.data.trim() && node.parentElement && visible(node.parentElement)) nodes.push(node);
+      if (node.data.trim() && node.parentElement && isVisible(node.parentElement)) nodes.push(node);
       return;
     }
     if (node instanceof Element && node.matches(EXCLUDED)) return;
     if (node instanceof Element) onElement?.(node);
-    if (node instanceof HTMLSlotElement) {
-      const assigned = node.assignedNodes({ flatten: true });
-      (assigned.length ? assigned : [...node.childNodes]).forEach(visit);
-    } else if (node instanceof Element && node.shadowRoot) {
-      onShadow?.(node.shadowRoot);
-      // Walk the rendered tree: slots supply light-DOM content exactly once.
-      [...node.shadowRoot.childNodes].forEach(visit);
-    } else {
-      [...node.childNodes].forEach(visit);
-    }
+    if (node instanceof Element && node.shadowRoot) onShadow?.(node.shadowRoot);
+    // Slots supply light-DOM content exactly once; unassigned children stay out.
+    renderedChildren(node).forEach(visit);
   };
   visit(root);
   return nodes;
 }
 
-function text(root: Element): string {
-  return textNodes(root).map(n => n.data.trim()).join(" ").replace(/\s+/g, " ").trim();
+function text(root: Element, isVisible: typeof visible): string {
+  return textNodes(root, undefined, undefined, isVisible).map(n => n.data.trim()).join(" ").replace(/\s+/g, " ").trim();
 }
 
 /** Keep address context, not paths, credentials, query tokens, or fragments. Empty scheme means unknown. */
@@ -163,14 +157,21 @@ export function discover(root: Element, onShadow?: (root: ShadowRoot) => void,
 }
 
 export function evidence(el: HTMLElement, url = new URL(location.href)): Evidence {
+  // This synchronous read cannot span page mutations. Discard the cache on
+  // return: freshness checks after inference must observe the current DOM.
+  const visibility = new WeakMap<Element, boolean>();
+  const isVisible = (element: Element): element is HTMLElement => {
+    if (!visibility.has(element)) visibility.set(element, visible(element));
+    return visibility.get(element)!;
+  };
   const anchors: HTMLElement[] = [];
   const media: HTMLElement[] = [];
   const scope = ownership(el, url);
   const nodes = (scope?.nodes || [el]).flatMap(root => textNodes(root, undefined, element => {
-    if (!visible(element)) return;
+    if (!element.matches(`a[href],${MEDIA}`) || !isVisible(element)) return;
     if (element.matches("a[href]")) anchors.push(element);
     if (element.matches(MEDIA)) media.push(element);
-  }));
+  }, isVisible));
   const mediaDescriptions = media.flatMap(node => {
     const descriptions = [node.getAttribute("alt") || ""];
     for (const [attribute, label] of [["title", "Media title"], ["aria-label", "Media label"], ["aria-description", "Media description"]]) {
@@ -180,9 +181,9 @@ export function evidence(el: HTMLElement, url = new URL(location.href)): Evidenc
     return descriptions;
   });
   const fullText = [...nodes.map(node => node.data.trim()), ...mediaDescriptions].join(" ").replace(/\s+/g, " ").trim();
-  const links = anchors.filter(visible).map(a => {
+  const links = anchors.map(a => {
     const destination = address(a.getAttribute("href"));
-    return { label: text(a).slice(0, 160), destination_host: destination.host, destination_scheme: destination.scheme };
+    return { label: text(a, isVisible).slice(0, 160), destination_host: destination.host, destination_scheme: destination.scheme };
   });
   const frame = media.find(node => node.matches("iframe")) || media[0];
   const source = address(frame?.getAttribute("src") ?? frame?.getAttribute("data") ?? null);

@@ -63,13 +63,16 @@ export function containsRendered(parent: Node, child: Node): boolean {
   return false;
 }
 
-function children(node: Node): Node[] {
+/** Snapshot rendered children without the cost of iterating a live NodeList. */
+export function renderedChildren(node: Node): Node[] {
   if (node instanceof HTMLSlotElement) {
     const assigned = node.assignedNodes({ flatten: true });
-    return assigned.length ? assigned : [...node.childNodes];
+    if (assigned.length) return assigned;
   }
-  if (node instanceof Element && node.shadowRoot) return [...node.shadowRoot.childNodes];
-  return [...node.childNodes];
+  const root = node instanceof Element && node.shadowRoot ? node.shadowRoot : node;
+  const result: Node[] = [];
+  for (let child = root.firstChild; child; child = child.nextSibling) result.push(child);
+  return result;
 }
 
 /** Enumerate rendered nodes once; useful for source changes and safe forest deletion. */
@@ -78,7 +81,7 @@ export function scopeTree(roots: readonly Node[]): Node[] {
   function visit(node: Node): void {
     if (seen.has(node) || (node instanceof Element && node.hasAttribute(OWN))) return;
     seen.add(node);
-    children(node).forEach(visit);
+    renderedChildren(node).forEach(visit);
   }
   roots.forEach(visit);
   return [...seen];
@@ -145,7 +148,7 @@ function makeScope(key: HTMLElement, rule: ItemRule, adapter: SiteAdapter): Item
     if (visited.has(node) || preserved.some(part => containsRendered(part, node))) return;
     visited.add(node);
     if (preserved.some(part => containsRendered(node, part))) {
-      children(node).forEach(select);
+      renderedChildren(node).forEach(select);
     } else if (node instanceof HTMLElement || (node instanceof Text && node.data.trim())) {
       nodes.push(node);
     }
