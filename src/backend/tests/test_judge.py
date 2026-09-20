@@ -18,7 +18,7 @@ from tempfile import NamedTemporaryFile
 import httpx
 from pydantic import ValidationError
 
-from denied.judge import ADDRESS_CONTEXT, AD_CRITERIA, SAFETY_CRITERIA, VIOLENT_ENTITIES, build_request, judge
+from denied.judge import ADDRESS_CONTEXT, AD_CRITERIA, POLICY_VERSION, SAFETY_CRITERIA, VIOLENT_ENTITIES, build_request, judge
 from denied.dispatch import Admission
 from denied.schemas import Batch, Judgments, Noul
 from denied import telemetry
@@ -256,13 +256,23 @@ class ApiTests(unittest.TestCase):
                                                          violent_entities=VIOLENT_ENTITIES))
         for name in ("ad_0", "unsafe_0"):
             self.assertIn("policy.address_context", request["questions"][name]["instructions"])
-        self.assertIn("policy.violent_entities.question", request["questions"]["violent_entity_0"]["instructions"])
+        self.assertIn("policy.violent_entities.guidance", request["questions"]["violent_entity_0"]["instructions"])
         self.assertIn("candidates.item_A", request["questions"]["violent_entity_0"]["instructions"])
         # Every rule remains present, but the fixed policy is transmitted once.
         self.assertEqual(json.dumps(request).count(ADDRESS_CONTEXT), 1)
         for value in (-0.1, 1.1, "0.9", True, float("nan"), float("inf")):
             with self.subTest(value=value), self.assertRaises(ValidationError):
                 Noul.model_validate({"type": "noul", "noul": value})
+
+    def test_reward_bait_policy_is_active_and_safety_default_is_point_six(self):
+        request = build_request(Batch.model_validate(BATCH))
+        self.assertEqual(POLICY_VERSION, "10")
+        self.assertIn("giveaway", SAFETY_CRITERIA["true"])
+        self.assertIn("reward", SAFETY_CRITERIA["true"])
+        self.assertIn("For candidates.item_A ONLY", request["questions"]["unsafe_0"]["instructions"])
+        self.assertIn("Do not transfer evidence from other candidates", request["questions"]["unsafe_0"]["instructions"])
+        with server() as client:
+            self.assertEqual(client.get("/health").json()["safety_threshold"], 0.60)
 
     def test_pre_entity_receipts_remain_valid(self):
         # Use an actual advertising judgment, then encode the signed pre-v9

@@ -38,7 +38,7 @@ class Unavailable(Exception):
 def create_app() -> FastAPI:
     key = os.environ.get("TYPESAFE_API_KEY", "")
     ad_threshold = float(os.environ.get("DENIED_AD_THRESHOLD", "0.70"))
-    safety_threshold = float(os.environ.get("DENIED_SAFETY_THRESHOLD", "0.80"))
+    safety_threshold = float(os.environ.get("DENIED_SAFETY_THRESHOLD", "0.60"))
     if not (0 <= ad_threshold <= 1 and 0 <= safety_threshold <= 1):
         raise ValueError("Invalid thresholds")
     token = os.environ.get("BACKEND_API_TOKEN", "")
