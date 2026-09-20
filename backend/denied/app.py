@@ -21,6 +21,7 @@ from .judge import MODEL_VERSION, POLICY_VERSION, judge
 from .schemas import Batch, Wave
 from . import telemetry
 from .dispatch import Admission
+from .reuse import DocumentReuse
 
 
 def load_environment(path: str | os.PathLike[str] | None = None) -> None:
@@ -44,12 +45,13 @@ def create_app() -> FastAPI:
     # Honor the old off switch so upgrades cannot silently re-enable recording.
     history_enabled = os.environ.get("DENIED_RECORD_HISTORY", os.environ.get("DENIED_RECORD_REMOVALS", "1")) == "1"
     recording = history_enabled and telemetry.configured() and len(token) >= 32
+    reuse_enabled = os.environ.get("DENIED_DOCUMENT_REUSE", "1") != "0"
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         async with httpx.AsyncClient(timeout=15, trust_env=False,
-                                    # Waves are five seconds apart. The default five-second
-                                    # idle expiry forces new TLS handshakes on each wave.
+                                    # Reuse warm connections across intermittent waves
+                                    # rather than paying repeated TLS setup costs.
                                     limits=httpx.Limits(max_connections=600, max_keepalive_connections=100,
                                                        keepalive_expiry=60)) as connection:
             app.state.client = connection
@@ -57,12 +59,16 @@ def create_app() -> FastAPI:
             app.state.admission = Admission()
             app.state.storage_slots = asyncio.Semaphore(4)
             app.state.recording_error = None
+            app.state.reuse = DocumentReuse()
             if recording:
                 try:
                     await asyncio.to_thread(telemetry.initialize)
                 except (psycopg.Error, ValueError):
                     app.state.recording_error = "History unavailable"
-            yield
+            try:
+                yield
+            finally:
+                await app.state.reuse.close()
 
     api = FastAPI(title="denied.", lifespan=lifespan, docs_url=None, redoc_url=None)
     api.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
@@ -86,7 +92,9 @@ def create_app() -> FastAPI:
     async def health():
         return {"configured": bool(key), "policy_version": POLICY_VERSION,
                 "ad_threshold": ad_threshold, "safety_threshold": safety_threshold,
-                "recording_enabled": recording, "recording_error": api.state.recording_error}
+                "recording_enabled": recording, "recording_error": api.state.recording_error,
+                "document_reuse": {"enabled": reuse_enabled, "hits": api.state.reuse.hits,
+                                   "misses": api.state.reuse.misses, "inference_batches": api.state.reuse.requests}}
 
     async def read_body(request: Request, limit: int) -> bytes:
         body = bytearray()
@@ -96,14 +104,17 @@ def create_app() -> FastAPI:
                 raise Unavailable(413, "Request too large")
         return bytes(body)
 
+    async def infer(batch: Batch):
+        async with api.state.slots:
+            started = perf_counter()
+            judgments = await judge(api.state.client, batch, key, ad_threshold, safety_threshold,
+                                    admission=api.state.admission)
+            return judgments, round((perf_counter() - started) * 1000)
+
     async def evaluate_batch(batch: Batch, background: BackgroundTasks):
         try:
             # Admission may wait for a rate window; inference gets its own deadline.
-            async with api.state.slots:
-                started = perf_counter()
-                judgments = await judge(api.state.client, batch, key, ad_threshold, safety_threshold,
-                                        admission=api.state.admission)
-                judge_ms = round((perf_counter() - started) * 1000)
+            judgments, judge_ms = await api.state.reuse.evaluate(batch, infer) if reuse_enabled else await infer(batch)
         except (TimeoutError, httpx.TimeoutException):
             raise Unavailable(504, "Judgment timed out; content was not checked") from None
         except (httpx.HTTPError, ValueError, KeyError, TypeError):
