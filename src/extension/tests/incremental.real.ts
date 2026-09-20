@@ -1,9 +1,6 @@
 /** Delay one genuine response; never replace Jev's classifications. */
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { chromium } from "playwright";
+import { launchExtension } from "./browser";
 import { localAPI, until } from "./api";
 
 const api = await localAPI();
@@ -69,16 +66,9 @@ const site = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch() {
     headers: { "Content-Type": "text/html" },
   });
 } });
-const profile = await mkdtemp(join(tmpdir(), "denied-incremental-"));
-const context = await chromium.launchPersistentContext(profile, {
-  channel: "chromium", headless: true,
-  args: [`--disable-extensions-except=${resolve("dist")}`, `--load-extension=${resolve("dist")}`],
-});
+const extension = await launchExtension({ enabled: true, animate: false, toast: false, apiBase: `http://127.0.0.1:${proxy.port}` });
+const { context, worker } = extension;
 try {
-  const worker = context.serviceWorkers()[0] || await context.waitForEvent("serviceworker");
-  await worker.evaluate(async apiBase => {
-    await chrome.storage.local.set({ settings: { enabled: true, animate: false, toast: false, mode: "remove", apiBase } });
-  }, `http://127.0.0.1:${proxy.port}`);
   const page = await context.newPage();
   await page.goto(`http://127.0.0.1:${site.port}`);
   await until(() => held && adReturned, "both actual Jev responses", 30000);
@@ -108,9 +98,8 @@ try {
   console.log(`PASS: independent results and overlapping waves; next wave at ${Math.round(gap)}ms; ordinary content retained`);
 } finally {
   release();
-  await context.close();
+  await extension.close();
   proxy.stop(true);
   site.stop(true);
   await api.stop();
-  await rm(profile, { recursive: true, force: true });
 }

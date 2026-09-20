@@ -1,9 +1,6 @@
 /** Measure browser transport concurrency while forwarding genuine API responses. */
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { chromium } from "playwright";
+import { launchExtension } from "./browser";
 import { localAPI, until } from "./api";
 
 const api = await localAPI();
@@ -56,16 +53,9 @@ const site = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch() {
     `<p>School garden ${i} has flowers and butterflies.</p>`).join("")}</body></html>`,
     { headers: { "Content-Type": "text/html" } });
 } });
-const profile = await mkdtemp(join(tmpdir(), "denied-latency-"));
-const context = await chromium.launchPersistentContext(profile, {
-  channel: "chromium", headless: true,
-  args: [`--disable-extensions-except=${resolve("dist")}`, `--load-extension=${resolve("dist")}`],
-});
+const extension = await launchExtension({ enabled: true, animate: false, toast: false, apiBase: `http://127.0.0.1:${proxy.port}` });
+const { context } = extension;
 try {
-  const worker = context.serviceWorkers()[0] || await context.waitForEvent("serviceworker");
-  await worker.evaluate(async apiBase => {
-    await chrome.storage.local.set({ settings: { enabled: true, animate: false, toast: false, mode: "remove", apiBase } });
-  }, `http://127.0.0.1:${proxy.port}`);
   const page = await context.newPage();
   for (let round = 1; round <= 3; round++) {
     timings.length = 0;
@@ -91,9 +81,8 @@ try {
     if (round < 3) await Bun.sleep(5000);
   }
 } finally {
-  await context.close();
+  await extension.close();
   proxy.stop(true);
   site.stop(true);
   await api.stop();
-  await rm(profile, { recursive: true, force: true });
 }

@@ -1,9 +1,6 @@
 /** Real Chrome -> forwarding observer -> FastAPI -> Jev; no substituted responses. */
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { chromium } from "playwright";
+import { launchExtension } from "./browser";
 import { localAPI, until } from "./api";
 import { observeJudgments } from "./observe-judgments";
 
@@ -17,11 +14,6 @@ const site = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch() {
       '<div><span>Sponsored</span><h2>Buy our colored pencils today.</h2><a href="https://example.com">Shop now</a></div>';
     </script></body></html>`, { headers: { "Content-Type": "text/html" } });
 } });
-const profile = await mkdtemp(join(tmpdir(), "denied-waves-"));
-const context = await chromium.launchPersistentContext(profile, {
-  channel: "chromium", headless: true,
-  args: [`--disable-extensions-except=${resolve("dist")}`, `--load-extension=${resolve("dist")}`],
-});
 const requests: { at: number; count: number }[] = [];
 const statuses: number[] = [];
 let completedBlocks = 0;
@@ -35,11 +27,9 @@ const observer = observeJudgments(api.url, batch => {
     if (statuses.length === 30) firstWaveCompletedAt = performance.now();
     completedBlocks += record.count;
 });
+const extension = await launchExtension({ enabled: true, animate: false, toast: true, apiBase: observer.url });
+const { context } = extension;
 try {
-  const worker = context.serviceWorkers()[0] || await context.waitForEvent("serviceworker");
-  await worker.evaluate(async apiBase => {
-    await chrome.storage.local.set({ settings: { enabled: true, animate: false, toast: true, mode: "remove", apiBase } });
-  }, observer.url);
   const page = await context.newPage();
   const started = performance.now();
   await page.goto(`http://127.0.0.1:${site.port}/`);
@@ -84,9 +74,8 @@ try {
     secondWaveMs: requests[30] ? Math.round(requests[30].at - requests[0].at) : null,
     shadowCardRemoved: true, shadowMutationRemoved: true, textlessMediaChecked: true }));
 } finally {
-  await context.close();
+  await extension.close();
   observer.stop();
   site.stop(true);
   await api.stop();
-  await rm(profile, { recursive: true, force: true });
 }
