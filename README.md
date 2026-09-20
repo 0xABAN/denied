@@ -1,4 +1,4 @@
-# denied.
+# noped.
 
 A local-first Chrome extension demo for under-13 text/link filtering and advertisement removal. Flagged blocks glow, pop, and disappear. The Python API supplies three independent Jev judgments; the browser owns discovery and animation.
 
@@ -30,8 +30,8 @@ Then:
 
 1. Open `chrome://extensions` and enable Developer mode.
 2. Choose **Load unpacked** and select this repository's `dist/` directory.
-3. Open the `denied.` popup. The API status should be ready.
-4. Enable filtering. It starts paused so installation alone does not send browsing text.
+3. Open the `noped.` popup.
+4. Protection and removal effects start enabled. Eligible page text is sent automatically through the configured API to Jev; new and edited content is checked without pressing Rescan. Existing installs receive a one-time upgrade enabling both settings; subsequent animation preferences are preserved.
 5. Reload already-open web pages after installing or rebuilding the extension.
 
 The popup includes page/total counts, separate ad/safety counts, animation and toast switches, rescan, and a highlight-only diagnostic mode. A block matching both filters counts as one removal. Highlighting does not count as removal.
@@ -72,7 +72,7 @@ Set a private `BACKEND_API_TOKEN` of at least 32 characters. Generate one locall
 
 On startup, the API creates two ordinary PostgreSQL tables, `denied.judgments` and `denied.removals`. Existing unrelated tables are untouched. Set `DENIED_RECORD_HISTORY=0` to disable both kinds of recording without disabling filtering. The old `DENIED_RECORD_REMOVALS` setting remains a fallback when the new setting is absent, so an existing off switch stays off.
 
-**`denied.judgments` records every successfully judged passage**, including `keep` decisions. It stores bounded text, link/ad evidence, page hostname/protocol, all three scores, decision/reasons, active thresholds, model/policy versions, and `judge_ms`. Document/target/candidate/revision IDs identify the case; a fresh `batch_id` identifies each actual Jev evaluation. Re-evaluations are separate judgments, not duplicates. This enables review of suspected false negatives, but a keep decision is not itself evidence of failure: human labels are still needed. Content the scanner never checked, and failed provider calls without a valid judgment, are not represented.
+**`denied.judgments` records every successfully judged passage**, including `keep` decisions. It stores bounded text, link/ad evidence, page hostname/protocol, all three scores, decision/reasons, active thresholds, model/policy versions, and `judge_ms`. Document/target/candidate/revision IDs identify the case; a fresh `batch_id` identifies each returned judgment batch. Identical evidence may reuse a recent document-scoped score; `judge_ms` retains its originating provider duration. This enables review of suspected false negatives, but a keep decision is not itself evidence of failure: human labels are still needed. Content the scanner never checked, and failed provider calls without a valid judgment, are not represented.
 
 **`denied.removals` records actual browser deletions**, never just positive model decisions. Each row contains:
 
@@ -136,7 +136,7 @@ The API tests start actual loopback Uvicorn processes. They check labeled judgme
 
 The browser suite starts the API and loads the built extension in Chromium. It checks removals and benign-content preservation, private-input/URL exclusions, animation, changed text/links/protocols, stale responses, counters, and service-worker restart. An outage test stops the actual API, then restarts it.
 
-Provider connections stay alive for up to 60 idle seconds so five-second waves do not repeatedly pay TLS setup costs. In a local real-provider measurement, warm 600-block waves had 255–281 ms median provider round trips; the browser-path test measured 267–285 ms median batch results and 405–476 ms for the complete wave. Cold waves were slower (727 ms in that browser run). These are observations, not latency guarantees. Animations intentionally add their own time after a positive judgment. The latency test's forwarding observer buffers delivery, so its batch timings measure backend results arriving at the observer, not DOM removal; `tests/incremental.real.ts` separately verifies incremental delivery and overlapping waves.
+Provider connections stay alive for up to 60 idle seconds so intermittent waves do not repeatedly pay TLS setup costs. In a local real-provider measurement, warm 600-block waves had 255–281 ms median provider round trips; the browser-path test measured 267–285 ms median batch results and 405–476 ms for the complete wave. Cold waves were slower (727 ms in that browser run). These are observations, not latency guarantees. Animations intentionally add their own time after a positive judgment. The latency test's forwarding observer buffers delivery, so its batch timings measure backend results arriving at the observer, not DOM removal; `tests/incremental.real.ts` separately verifies incremental delivery and overlapping waves.
 
 The ordinary API/browser suites disable recording. The Tiger suite uses actual Chromium, FastAPI, Jev, and Tiger Data, creates a unique `denied_test_*` schema, and removes only that schema afterward. It checks every kept/flagged passage against actual API responses, single-date records and migration of legacy dates, text/scores/timing, duplicate delivery, receipt tampering, authenticated reads, highlights and canceled removals, restart persistence, and an actual refused database connection followed by recovery. It never writes test data into the production `denied` schema.
 
@@ -184,8 +184,8 @@ Bun bundles TypeScript; Chrome runs the output. The backend uses FastAPI, HTTPX,
 
 - Removal requires `ad_score >= 0.70`, `unsafe_score >= 0.80`, **or** `violent_entity_score >= 0.80` by default. These are uncalibrated model scores, not verified 70%/80% certainty. Higher thresholds trade fewer false removals for more missed targets. Set `DENIED_AD_THRESHOLD` and `DENIED_SAFETY_THRESHOLD` in `backend/.env` and restart the API; `/health` reports the active values.
 - All three questions receive page, link, and iframe-source hostnames and URL schemes. Domain reputation and HTTP/HTTPS are context, not allowlists or automatic decisions. A familiar domain or HTTPS does not guarantee child-appropriate content or exempt advertisements; unknown schemes remain unknown.
-- The browser starts scanning without an initial delay and dispatches waves of up to 600 blocks. The worker coalesces up to 30 twenty-block batches over an eight-millisecond collection window, then sends them through `/judge-stream` on one HTTP connection (splitting transports near the 2 MB body limit). The backend starts those provider requests in parallel and streams each batch result independently. This avoids Chrome's per-origin HTTP/1 connection queue. Wave starts are at least five seconds apart. Each block has separately identified advertising, direct-safety and violent-entity judgments; server-owned policy is included once per provider request.
-- Each completed batch updates the page immediately. Waves can overlap: another wave of up to 600 pending blocks can start five seconds after the prior start, even while earlier responses remain outstanding. In-flight revisions are not redispatched.
+- The browser starts scanning without an initial delay and dispatches waves of up to 600 blocks. The worker coalesces up to 30 twenty-block batches over an eight-millisecond collection window, then sends them through `/judge-stream` on one HTTP connection (splitting transports near the 2 MB body limit). The backend starts those provider requests in parallel and streams each batch result independently. This avoids Chrome's per-origin HTTP/1 connection queue. Wave starts have no artificial cooldown. Each block has separately identified advertising, direct-safety and violent-entity judgments; server-owned policy is included once per provider request.
+- Each completed batch updates the page immediately. Waves can overlap: another wave of up to 600 pending blocks can start immediately after the prior dispatch, even while earlier responses remain outstanding. In-flight revisions are not redispatched.
 - Discovery groups leaf articles/list items and compact, visibly bounded repeated containers into coherent targets. These generic structure/layout rules define boundaries, never ad classifications. Nested collections and ambiguous containers retain smaller targets; surrounding conversation context is not inferred in this first pass.
 - Shared backend admission limits starts to 1,200 per rolling minute. Provider token throttling is handled through 429/529 backoff; JSON bytes are not treated as tokens. Browser dispatch cadence does not guarantee provider completion within five seconds.
 - Each block contains up to 24,000 characters and eight visible links. Longer/overlinked targets remain explicitly partially unchecked. The browser retains up to 1,200 targets, evicting checked offscreen targets as needed.
