@@ -25,7 +25,7 @@ function highlightRegion(el: HTMLElement, result: Decision): void {
   const outline = el.style.outline;
   const tag = document.createElement("small");
   tag.setAttribute(OWN, "");
-  tag.textContent = `denied. ${result.reasons.join(" + ")} · ${Math.round(Math.max(result.ad_score, result.unsafe_score, result.violent_entity_score) * 100)}%`;
+  tag.textContent = `noped. ${result.reasons.join(" + ")} · ${Math.round(Math.max(result.ad_score, result.unsafe_score, result.violent_entity_score) * 100)}%`;
   tag.style.cssText = `display:block;background:${ROSE};color:white;font:12px system-ui;padding:4px;pointer-events:none`;
   el.style.outline = `3px solid ${ROSE}`;
   el.append(tag);

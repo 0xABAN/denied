@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "denied.",
+  "name": "noped.",
   "version": "0.1.0",
   "description": "A local-first demo that removes advertisements and unsafe text for under-13 browsing.",
   "permissions": ["storage"],
@@ -12,5 +12,5 @@
     "run_at": "document_idle",
     "all_frames": false
   }],
-  "action": { "default_popup": "popup.html", "default_title": "denied." }
+  "action": { "default_popup": "popup.html", "default_title": "noped." }
 }

@@ -149,7 +149,7 @@ async function apply(el: HTMLElement, target: Target, epoch: number, url: string
     counts.total++;
     for (const reason of result.reasons) counts[reason]++;
     void chrome.runtime.sendMessage({ type: "counts", counts: { ...counts } }).catch(() => {});
-    if (settings.toast) notify(`denied. ${counts.total} removed · ${counts.advertising} ads · ${counts.unsafe_content} unsafe`);
+    if (settings.toast) notify(`noped. ${counts.total} removed · ${counts.advertising} ads · ${counts.unsafe_content} unsafe`);
     records.delete(el);
   } else if (el.isConnected) {
     if (records.get(el) === target) records.delete(el);
