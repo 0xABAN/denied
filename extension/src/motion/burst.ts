@@ -1,5 +1,5 @@
 import { OWN } from "../contracts";
-import { isDarkSurface } from "./surface";
+import { isDarkSurface, motionShadow } from "./surface";
 
 const MAX_LAYERS = 4;
 const MAX_ATLAS_PIXELS = 1_000_000;
@@ -138,6 +138,9 @@ export function prepareBurst(element: HTMLElement, peakScale: number): Burst | u
   if (!context) return;
   canvas.style.cssText = `all:initial;position:fixed;left:${left - MARGIN}px;top:${top - MARGIN}px;` +
     `width:${width + MARGIN * 2}px;height:${height + MARGIN * 2}px;pointer-events:none;z-index:2147483646;`;
+  // Filter the painted alpha, not the rectangular canvas; the padded bitmap
+  // leaves room for the shadow without changing shard geometry or travel.
+  canvas.style.filter = motionShadow(element);
   let frame = 0;
   let timeout: ReturnType<typeof setTimeout>;
   let closed = false;

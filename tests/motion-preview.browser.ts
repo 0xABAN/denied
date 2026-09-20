@@ -21,9 +21,13 @@ try {
   for (const theme of ["light", "dark"]) {
     if (theme === "dark") await page.getByRole("button", { name: "Dark appearance", exact: true }).click();
     await button.click();
+    assert.match(await button.evaluate(el => getComputedStyle(el).filter), /drop-shadow\(/,
+      "The spinning item should cast a drop shadow");
     assert.equal(await page.locator('[data-denied-ui="glint"]').count(), 1);
     assert.equal(await page.locator('[data-denied-ui="chains"], [data-denied-ui="stamp"]').count(), 0);
     await page.waitForFunction(() => !!document.querySelector('canvas[data-denied-ui="burst"]'));
+    assert.match(await page.locator('canvas[data-denied-ui="burst"]').evaluate(el => getComputedStyle(el).filter), /drop-shadow\(/,
+      "The transparent shard layer should cast a shape-following drop shadow");
     assert.equal(await page.locator('[data-denied-ui="outline"]').count(), 0,
       "The blinking white outline must be gone before the shard burst");
     await button.waitFor({ state: "detached" });
@@ -48,8 +52,14 @@ try {
   const clipping = await button.evaluate(target => {
     const stage = target.parentElement!;
     for (const animation of target.getAnimations()) {
+      // This geometry-only test uses hit testing as its visibility probe.
+      // Remove the separately tested hover shield, not the clipping fix.
+      if ((animation.effect as KeyframeEffect).getKeyframes().some(frame => "pointerEvents" in frame)) {
+        animation.cancel();
+        continue;
+      }
       animation.pause();
-      animation.currentTime = 800;
+      animation.currentTime = 400;
     }
     const box = stage.getBoundingClientRect();
     const visibleOutside = () => {

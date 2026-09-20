@@ -2,8 +2,10 @@ import { type Settings } from "../contracts";
 import { prepareBurst, type Burst } from "./burst";
 import { createGlint } from "./glint";
 import { releaseOverflowClips } from "./overflow";
+import { scopeTree } from "../adapters";
+import { motionShadow } from "./surface";
 
-const SPIN_MS = 1200;
+const SPIN_MS = 600;
 const HOLD_MS = 300;
 const PEAK_SCALE = .86;
 const SETTLE_MS = 250;
@@ -70,8 +72,23 @@ export function removeWithMotion(element: HTMLElement, settings: Settings, curre
 
     void (async () => {
       try {
+        // Leaving a flagged item interactive lets hover handlers rewrite its
+        // evidence mid-removal. Disable hit testing, not freshness checks.
+        // Descendants can explicitly override inherited pointer-events, including
+        // inside shadow roots, so cover those too with owned, cancelable effects.
+        for (const node of scopeTree([element])) {
+          if (!(node instanceof Element) || getComputedStyle(node).pointerEvents === "none") continue;
+          const frame = { pointerEvents: "none" };
+          animations.push(node.animate([frame, frame], { duration: 1, fill: "both" }));
+        }
         restoreOverflow = releaseOverflowClips(element);
         burst = prepareBurst(element, PEAK_SCALE);
+        // Add to (rather than replace) host filters; cancellation restores them
+        // automatically, including when the page changes during the animation.
+        const shadow = { filter: motionShadow(element) };
+        animations.push(element.animate([shadow, shadow], {
+          duration: SPIN_MS + HOLD_MS, composite: "add", fill: "both",
+        }));
         // Equal-time samples of an accelerating angle keep the last revolution
         // fastest. The white rim is a separate overlay, never a host-style edit.
         // Ending at a whole turn aligns the fragment atlas at handoff.

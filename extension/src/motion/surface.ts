@@ -12,3 +12,10 @@ export function isDarkSurface(element: HTMLElement): boolean {
   }
   return false;
 }
+
+/** Alpha-following shadows work on both intact elements and transparent shards. */
+export function motionShadow(element: HTMLElement): string {
+  return isDarkSurface(element)
+    ? "drop-shadow(0 8px 12px rgba(0,0,0,.8)) drop-shadow(0 2px 3px rgba(0,0,0,.5))"
+    : "drop-shadow(0 8px 12px rgba(0,0,0,.28)) drop-shadow(0 2px 3px rgba(0,0,0,.18))";
+}

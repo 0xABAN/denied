@@ -90,19 +90,25 @@ async function checked(token: string) {
   await until(async () => (await stats()).pending === 0, `${token} settled`);
 }
 
+async function configure(changes: Record<string, unknown>) {
+  return popup.evaluate(async changes => {
+    const { settings } = await chrome.runtime.sendMessage({ type: "settings" });
+    const response = await chrome.runtime.sendMessage({ type: "saveSettings", settings: { ...settings, ...changes } });
+    if (response.error) throw new Error(response.error);
+    return response.settings;
+  }, changes);
+}
+
 let failed: string | null = null;
 try {
   await popup.goto(`chrome-extension://${extensionId}/popup.html`);
-  await popup.locator("details summary").click();
-  await popup.locator("#apiBase").fill(observer.url);
-  await popup.locator("#save").click();
-  await popup.waitForFunction(() => document.querySelector("#service-status")?.textContent?.includes("API ready"));
+  await configure({ apiBase: observer.url, enabled: false });
   await page.goto(pageUrl);
   await page.bringToFront();
   await until(async () => Boolean(await stats().catch(() => null)), "content script ready");
   if (publicOnly) console.log("Controlled-page checks skipped explicitly (--public-only).");
   else {
-  await popup.locator("#enabled").check();
+  await configure({ enabled: true });
   await page.waitForSelector("#ad-card", { state: "detached" });
   await page.waitForSelector("#unsafe", { state: "detached" });
   await until(async () => (await stats()).pending === 0, "initial real judgments settled");
@@ -113,7 +119,7 @@ try {
   pass("actual FastAPI/Jev decisions remove an ad and a scam, retain benign content, exclude inputs");
 
   await add("animated", SCAM);
-  await page.waitForFunction(() => document.querySelector("#animated")?.getAnimations().some(a => a.effect?.getTiming().duration === 1200));
+  await page.waitForFunction(() => document.querySelector("#animated")?.getAnimations().some(a => a.effect?.getTiming().duration === 600));
   assert.equal(await page.locator('[data-denied-ui="glint"]').count(), 1,
     "A real Jev-triggered removal must use the glass-glint renderer");
   await mkdir("artifacts", { recursive: true });
@@ -211,16 +217,15 @@ try {
   await page.waitForSelector("#reduced", { state: "detached" });
   await page.emulateMedia({ reducedMotion: "no-preference" });
   const beforeDebug = (await stats()).total;
-  await popup.locator("#mode").selectOption("highlight");
+  await configure({ mode: "highlight" });
   await add("debug", SCAM);
   await page.waitForSelector("#debug [data-denied-ui]");
   assert.equal((await stats()).total, beforeDebug);
-  await popup.locator("#enabled").uncheck();
+  await configure({ enabled: false });
   await add("paused", SCAM);
   await page.waitForSelector("#debug [data-denied-ui]", { state: "detached" });
   assert.equal(await page.locator("#paused").count(), 1);
-  await popup.locator("#mode").selectOption("remove");
-  await popup.locator("#enabled").check();
+  await configure({ mode: "remove", enabled: true });
   await page.bringToFront();
   await page.waitForSelector("#debug", { state: "detached" });
   await page.waitForSelector("#paused", { state: "detached" });
@@ -233,7 +238,7 @@ try {
   await cdp.send("ServiceWorker.stopAllWorkers");
   await popup.reload();
   await until(async () => Number(await popup.locator("#all-total").textContent()) === finalCount, "totals survive restart");
-  assert.equal(await popup.locator("#enabled").isChecked(), true);
+  assert.equal(await popup.evaluate(async () => (await chrome.runtime.sendMessage({ type: "settings" })).settings.enabled), true);
   await popup.screenshot({ path: "artifacts/real-popup.png" });
   pass("settings and counts survive actual service-worker shutdown", { removals: finalCount });
   }
@@ -242,7 +247,7 @@ try {
   // Public pages use the same unmodified extension and provider. No login or cookie-consent actions.
   const sites = motionOnly ? [] : publicURLs.length ? publicURLs : ["https://example.com/", "https://www.python.org/about/", "https://www.w3schools.com/html/"];
   for (const url of sites) {
-    await popup.locator("#enabled").uncheck();
+    await configure({ enabled: false });
     try {
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
       pageUrl = page.url();
@@ -250,7 +255,7 @@ try {
       const adSlots = new URL(url).hostname === "www.w3schools.com" ? "iframe[data-actirise]" : null;
       if (adSlots) await page.waitForSelector(adSlots, { state: "visible", timeout: 20000 });
       const before = observations.size;
-      await popup.locator("#enabled").check();
+      await configure({ enabled: true });
       await page.bringToFront();
       await until(() => observations.size > before, `real requests on ${url}`);
       await until(async () => (await stats()).pending === 0, `public page settled: ${url}`, 45000);

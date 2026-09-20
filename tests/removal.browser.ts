@@ -42,6 +42,23 @@ async function setup(count = 1) {
 }
 
 try {
+  await setup();
+  await page.locator("#target-0").evaluate(element => {
+    element.addEventListener("pointerenter", () => element.classList.add("hovered"));
+    // Some sites explicitly opt descendants back into pointer events.
+    element.querySelector("p")!.style.pointerEvents = "auto";
+  });
+  await page.mouse.move(0, 0);
+  await page.evaluate(() => { void (window as any).start("target-0"); });
+  const hoverBlocked = await page.locator("#target-0").evaluate(element =>
+    [element, element.querySelector("p")!].every(node => getComputedStyle(node).pointerEvents === "none"));
+  assert(hoverBlocked, "Disappearing content and interactive descendants must not accept hover");
+  await page.mouse.move(150, 90);
+  await page.waitForFunction(() => (window as any).results.length === 1);
+  assert((await page.evaluate(() => (window as any).results[0])).removed,
+    "Pointer movement must not cancel the disappearance");
+  console.log("PASS: disappearing content cannot receive hover, including opted-in descendants");
+
   await setup(2);
   const overflowCleanup = await page.evaluate(async () => {
     const outer = document.createElement("div");
@@ -193,7 +210,7 @@ try {
     };
   });
   const spinFrames = winding.frames.filter(frame => typeof frame.transform === "string" && frame.transform.includes("rotateY"));
-  assert.equal(winding.spinDuration, 1200, "Extend the spin by 500ms without changing the blink duration");
+  assert.equal(winding.spinDuration, 600, "Halve the spin without changing the blink duration");
   const angles = spinFrames.map(frame => Number(/rotateY\(([-\d.]+)deg\)/.exec(frame.transform as string)?.[1]));
   assert(angles.length >= 8, "The intact component must turn left-right around the vertical Y-axis");
   assert(spinFrames.every(frame => String(frame.transform).includes("perspective(")), "Perspective must make the near edge larger");
@@ -230,7 +247,7 @@ try {
   assert(String(winding.glint.sweep.at(-1)!.transform).includes("110%"), "The light must sweep through, not remain static");
   assert.equal(await page.locator("canvas[data-denied-ui]").count(), 0, "Do not explode before peak speed");
   await page.waitForFunction(() => document.getElementById('target-0')?.getAnimations().some(animation =>
-    animation.effect?.getTiming().duration === 1200 && animation.playState === 'finished'));
+    animation.effect?.getTiming().duration === 600 && animation.playState === 'finished'));
   const held = await page.locator('#target-0').evaluate(element => getComputedStyle(element).transform);
   await page.waitForTimeout(150);
   assert.equal(await page.locator('canvas[data-denied-ui="burst"]').count(), 0, 'Hold intact before breaking into shards');
@@ -255,11 +272,11 @@ try {
   assert.equal(ink.colored, 0, "Removal ink must be monochrome");
   await page.waitForFunction(() => (window as any).results.length === 1);
   const result = await page.evaluate(() => (window as any).results[0]);
-  assert(result.removed && result.ms >= 1650 && result.ms < 2000, JSON.stringify(result));
+  assert(result.removed && result.ms >= 1050 && result.ms < 1400, JSON.stringify(result));
   assert((await page.locator("#neighbor").boundingBox())!.y < originalNeighbor!.y);
   assert.equal(await page.locator("#neighbor").count(), 1);
   await page.waitForFunction(() => !document.querySelector("canvas[data-denied-ui]"));
-  assert(performance.now() - effectStarted < 2250, "The explosion must finish promptly after the spin and pause");
+  assert(performance.now() - effectStarted < 1650, "The explosion must finish promptly after the spin and pause");
   console.log("PASS: clean accelerating Y-axis spin, glass glint, explosion and cleanup");
 
   await setup();
@@ -324,17 +341,23 @@ try {
   await setup();
   const canceled = await page.evaluate(async () => {
     const element = document.getElementById("target-0")!;
-    element.style.cssText = "transform:rotate(1deg);opacity:.85;border:2px solid black;outline:1px solid rgb(17,34,51)";
+    element.style.cssText = "transform:rotate(1deg);opacity:.85;border:2px solid black;outline:1px solid rgb(17,34,51);filter:brightness(.9)";
     const before = element.getAttribute("style");
     const promise = (window as any).start("target-0");
+    const duringFilter = getComputedStyle(element).filter;
     setTimeout(() => { element.querySelector("p")!.textContent = "Replacement content must survive."; }, 70);
     const result = await promise;
     return { ...result, before, after: element.getAttribute("style"), connected: element.isConnected,
-      outline: getComputedStyle(element).outlineColor,
+      duringFilter, afterFilter: getComputedStyle(element).filter,
+      outline: getComputedStyle(element).outlineColor, pointerEvents: getComputedStyle(element).pointerEvents,
       animations: element.getAnimations().length, layers: document.querySelectorAll('canvas[data-denied-ui], [data-denied-ui="glint"]').length };
   });
   assert(!canceled.removed && canceled.connected);
   assert.equal(canceled.before, canceled.after);
+  assert.match(canceled.duringFilter, /brightness\(0\.9\).*drop-shadow\(/,
+    "The animated shadow must compose with the existing host filter");
+  assert.equal(canceled.afterFilter, "brightness(0.9)", "Cancellation must restore the original filter");
+  assert.equal(canceled.pointerEvents, "auto", "Canceled removals must restore interaction");
   assert.equal(canceled.outline, "rgb(17, 34, 51)", "Canceling removal motion must preserve the original outline");
   assert.equal(canceled.animations, 0);
   assert.equal(canceled.layers, 0);
@@ -440,7 +463,7 @@ try {
   await page.waitForSelector("canvas[data-denied-ui]");
   assert(await page.locator("canvas[data-denied-ui]").count() <= 4, "Visual layers must be bounded across a wave");
   await page.waitForFunction(() => (window as any).results.length === 12);
-  assert((await page.evaluate(() => (window as any).results)).every((r: any) => r.removed && r.ms < 2000));
+  assert((await page.evaluate(() => (window as any).results)).every((r: any) => r.removed && r.ms < 1400));
   await page.waitForFunction(() => !document.querySelector("canvas[data-denied-ui]"));
   assert.deepEqual(errors, []);
   console.log("PASS: concurrent removals stay bounded, do not serialize, and leave no orphan effects");
