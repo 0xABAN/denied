@@ -1,36 +1,9 @@
 import { OWN } from "../contracts";
 import type { ItemRule, ItemScope, SiteAdapter } from "./types";
-import { youtube } from "./youtube";
-import { amazon } from "./amazon";
-import { x } from "./x";
-import { groupme } from "./groupme";
-import { reddit } from "./reddit";
-import { facebook } from "./facebook";
-import { instagram } from "./instagram";
-import { tiktok } from "./tiktok";
-import { twitch } from "./twitch";
-import { linkedin } from "./linkedin";
-import { threads } from "./threads";
-import { bluesky } from "./bluesky";
-import { ebay } from "./ebay";
-import { etsy } from "./etsy";
-import { walmart } from "./walmart";
-import { aliexpress } from "./aliexpress";
-import { discord } from "./discord";
-import { whatsapp } from "./whatsapp";
-import { telegram } from "./telegram";
-import { slack } from "./slack";
-import { google } from "./google";
-import { bing } from "./bing";
-import { duckduckgo } from "./duckduckgo";
-import { gmail } from "./gmail";
-import { outlook } from "./outlook";
+import { adapters } from "./catalog";
 
 export type { ItemScope, SiteAdapter } from "./types";
-// Pinterest is temporarily unregistered; keep pinterest.ts for re-enabling.
-export const adapters: readonly SiteAdapter[] = [youtube, amazon, x, groupme, reddit, facebook, instagram,
-  tiktok, twitch, linkedin, threads, bluesky, ebay, etsy, walmart, aliexpress, discord,
-  whatsapp, telegram, slack, google, bing, duckduckgo, gmail, outlook];
+export { adapters } from "./catalog";
 
 // Preserve drafts and editable form state, not an item's playback/action
 // controls. Input values remain excluded from evidence and removal snapshots.

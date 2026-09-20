@@ -164,7 +164,8 @@ For the all-judgments/single-date change, typecheck/build, all seven real API te
 
 ## Architecture
 
-- `src/extension/adapters/`: 26 site-specific ownership definitions, protected boundaries and guarded multi-region removal.
+- `src/extension/adapters/catalog.ts`: one explicit catalog of site ownership rules, including disabled Pinterest.
+- `src/extension/adapters/index.ts` and `removal.ts`: shared ownership resolution, protected boundaries and guarded multi-region removal.
 - `src/extension/scan.ts` and `src/extension/grouping.ts`: adapter-first discovery, generic boundaries, media-card association, and text/metadata evidence extraction.
 - `src/extension/content.ts`: bounded queue, revisions, retries, and stale-result rejection.
 - `src/extension/effects.ts`: notices, diagnostic labels, and the removal entry point.

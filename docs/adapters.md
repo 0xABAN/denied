@@ -4,7 +4,7 @@ Adapters identify the item that supplied evidence. They do not classify content,
 
 All effects are browser-local DOM changes. Never click a site's delete/archive controls, call account APIs, read drafts, fetch attachments, or collect full-page dumps. Visible chat and email text follows the existing backend/Jev and optional judgment-history path.
 
-Pinterest's adapter is temporarily disabled: 25 adapters remain enabled. Its module and fixtures are retained for re-enabling. Pinterest uses generic filtering, not a site exemption.
+Pinterest's adapter is temporarily disabled: 25 adapters remain enabled. Its definition in `src/extension/adapters/catalog.ts` and fixtures are retained for re-enabling. Pinterest uses generic filtering, not a site exemption.
 
 ## Ownership definitions
 

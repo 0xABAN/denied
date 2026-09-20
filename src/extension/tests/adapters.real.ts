@@ -6,8 +6,8 @@
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { chromium } from "playwright";
+import { join } from "node:path";
+import { launchExtension } from "./browser";
 import { judgmentsFrom, type Batch, type Judgments, type PageStats } from "../contracts";
 import { adapterFixtures, fixturePage } from "./adapters.fixtures";
 import { adapterVariants } from "./adapters.variants";
@@ -62,17 +62,12 @@ const site = Bun.serve({ hostname: "127.0.0.1", port: 0, tls: { key: Bun.file(ke
 } });
 const mappings = [...new Set(adapterFixtures.map(fixture => new URL(fixture.url).hostname))]
   .map(host => `MAP ${host} 127.0.0.1`).join(", ");
-let context: Awaited<ReturnType<typeof chromium.launchPersistentContext>> | undefined;
+let extension: Awaited<ReturnType<typeof launchExtension>> | undefined;
 try {
-  context = await chromium.launchPersistentContext(join(profile, "chrome"), {
-    channel: "chromium", headless: true, ignoreHTTPSErrors: true,
-    args: [`--disable-extensions-except=${resolve("dist")}`, `--load-extension=${resolve("dist")}`,
-      `--host-resolver-rules=${mappings}`, "--no-proxy-server"],
+  extension = await launchExtension({ enabled: true, animate: false, toast: false, apiBase: observer.url }, {
+    ignoreHTTPSErrors: true, args: [`--host-resolver-rules=${mappings}`, "--no-proxy-server"],
   });
-  const worker = context.serviceWorkers()[0] || await context.waitForEvent("serviceworker");
-  await worker.evaluate(async apiBase => {
-    await chrome.storage.local.set({ settings: { enabled: true, animate: false, toast: false, mode: "remove", apiBase } });
-  }, observer.url);
+  const { context, worker } = extension;
   const page = await context.newPage();
   async function navigate(url: URL) {
     url.port = String(site.port);
@@ -144,7 +139,7 @@ try {
   }
   console.log("PASS: watch-page multi-region removal, native playback pause, preserved comments and payload privacy");
 } finally {
-  await context?.close();
+  await extension?.close();
   site.stop(true);
   observer.stop();
   await api.stop();
