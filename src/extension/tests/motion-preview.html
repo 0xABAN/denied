@@ -47,11 +47,11 @@
 <main>
   <div class="eyebrow">Removal motion</div>
   <h1>Gone. Keep the conversation.</h1>
-  <p class="intro">Wind up. Spin faster. Break apart.</p>
+  <p class="intro">Wind up. Expand. Bloop into nothing.</p>
   <section class="button-demo" aria-label="Sample button">
     <div class="button-demo-heading"><h2>Try it on a button</h2><button id="reset-button" type="button" disabled>Reset button</button></div>
-    <div id="button-stage"><button id="sample-button" type="button">Try the explosion</button></div>
-    <p id="button-status" role="status">Click to spin and shatter the button.</p>
+    <div id="button-stage"><button id="sample-button" type="button">Try the implosion</button></div>
+    <p id="button-status" role="status">Click to spin and implode the button.</p>
   </section>
   <section class="conversation" aria-label="Example conversation">
     <div class="channel"><span class="channel-mark" aria-hidden="true">#</span><div><strong>Design club</strong><p>Today’s conversation</p></div></div>
@@ -84,7 +84,7 @@
       buttonStatus.textContent = "Move your pointer off the button to play the animation.";
       await new Promise(resolve => button.addEventListener("pointerleave", resolve, { once: true }));
     }
-    buttonStatus.textContent = "Wind up. Spin faster. Break apart.";
+    buttonStatus.textContent = "Wind up. Expand. Bloop.";
     // Use the exact extension renderer; only the demonstration target changes.
     await removeElement(button, { animate: true }, () => button.isConnected);
     buttonBusy = false;
@@ -95,7 +95,7 @@
   resetButton.addEventListener("click", () => {
     buttonStage.replaceChildren(sampleButton.cloneNode(true));
     resetButton.disabled = true;
-    buttonStatus.textContent = "Click to spin and shatter the button.";
+    buttonStatus.textContent = "Click to spin and implode the button.";
     buttonStage.querySelector("button").focus({ preventScroll: true });
   });
 

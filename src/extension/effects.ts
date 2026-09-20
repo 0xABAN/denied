@@ -7,8 +7,6 @@ import { removalGuard, removeEmptyShortsShelf } from "./adapters/removal";
 
 const ROSE = "#e11d48";
 const highlights = new Map<HTMLElement, () => void>();
-let toast: HTMLElement | undefined;
-let toastTimer: ReturnType<typeof setTimeout>;
 
 export function clearHighlights(): void {
   for (const restore of highlights.values()) restore();
@@ -84,19 +82,4 @@ export async function removeScope(scope: ItemScope, settings: Settings, current:
     subtree.forEach(child => removed.add(child));
   }
   return true;
-}
-
-export function notify(message: string): void {
-  if (!toast?.isConnected) {
-    toast = document.createElement("div");
-    toast.setAttribute(OWN, "");
-    toast.setAttribute("role", "status");
-    toast.style.cssText = "position:fixed;right:16px;bottom:16px;z-index:2147483647;background:#0f172a;color:#f8fafc;font:13px/1.4 system-ui;padding:10px 14px;border-radius:10px;max-width:320px;box-shadow:0 8px 24px #0005;pointer-events:none;opacity:0";
-    toast.style.transition = matchMedia("(prefers-reduced-motion: reduce)").matches ? "none" : "opacity .3s";
-    document.documentElement.append(toast);
-  }
-  toast.textContent = message;
-  toast.style.opacity = "1";
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { if (toast) toast.style.opacity = "0"; }, 2200);
 }

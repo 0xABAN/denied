@@ -4,7 +4,7 @@ import { domainRequest } from "./domain-gate";
 import { discover, evidence, owns, visibleItem, type Evidence } from "./scan";
 import { renderedParent } from "./dom";
 import { ownershipAttributes } from "./adapters";
-import { clearHighlights, highlight, notify, removeElement } from "./effects";
+import { clearHighlights, highlight, removeElement } from "./effects";
 import { requestBatches } from "./scheduling";
 
 type Target = {
@@ -188,7 +188,6 @@ async function apply(el: HTMLElement, target: Target, result: Decision, epoch: n
     counts.total++;
     for (const reason of result.reasons) counts[reason]++;
     void chrome.runtime.sendMessage({ type: "counts", counts: { ...counts } }).catch(() => {});
-    if (settings.toast) notify(`noped. ${counts.total} removed · ${counts.advertising} ads · ${counts.unsafe_content} unsafe`);
     records.delete(el);
   } else if (el.isConnected) {
     if (records.get(el) === target) records.delete(el);

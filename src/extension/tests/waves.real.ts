@@ -27,7 +27,7 @@ const observer = observeJudgments(api.url, batch => {
     if (statuses.length === 30) firstWaveCompletedAt = performance.now();
     completedBlocks += record.count;
 });
-const extension = await launchExtension({ enabled: true, animate: false, toast: true, apiBase: observer.url });
+const extension = await launchExtension({ enabled: true, animate: false, apiBase: observer.url });
 const { context } = extension;
 try {
   const page = await context.newPage();

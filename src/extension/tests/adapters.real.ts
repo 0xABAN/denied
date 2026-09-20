@@ -74,7 +74,7 @@ const mappings = [...new Set(adapterFixtures.map(fixture => new URL(fixture.url)
   .map(host => `MAP ${host} 127.0.0.1`).join(", ");
 let extension: Awaited<ReturnType<typeof launchExtension>> | undefined;
 try {
-  extension = await launchExtension({ enabled: true, animate: false, toast: false, apiBase: observer.url }, {
+  extension = await launchExtension({ enabled: true, animate: false, apiBase: observer.url }, {
     ignoreHTTPSErrors: true, args: [`--host-resolver-rules=${mappings}`, "--no-proxy-server"],
   });
   const { context, worker } = extension;

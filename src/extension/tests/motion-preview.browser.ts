@@ -14,7 +14,7 @@ try {
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   await page.goto(url);
-  const button = page.getByRole("button", { name: "Try the explosion", exact: true });
+  const button = page.getByRole("button", { name: "Try the implosion", exact: true });
   const reset = page.getByRole("button", { name: "Reset button", exact: true });
   assert.equal(await button.count(), 1, "Preview needs a clickable sample button");
 
@@ -24,20 +24,48 @@ try {
     await page.mouse.move(0, 0);
     assert.match(await button.evaluate(el => getComputedStyle(el).filter), /drop-shadow\(/,
       "The spinning item should cast a drop shadow");
-    assert.equal(await page.locator('[data-denied-ui="glint"]').count(), 1);
+    assert.equal(await page.locator('[data-denied-ui="glint"]').count(), 0,
+      "The old reflection layer must not be rendered");
+    assert.equal(await page.locator('[data-denied-ui="outline"]').count(), 1,
+      "The outline rim should remain as the only opening decoration");
     assert.equal(await page.locator('[data-denied-ui="chains"], [data-denied-ui="stamp"]').count(), 0);
-    await page.waitForFunction(() => !!document.querySelector('canvas[data-denied-ui="burst"]'));
-    assert.match(await page.locator('canvas[data-denied-ui="burst"]').evaluate(el => getComputedStyle(el).filter), /drop-shadow\(/,
-      "The transparent shard layer should cast a shape-following drop shadow");
+    const implosionHandle = await page.waitForFunction(() => {
+      const element = document.getElementById("sample-button");
+      const animation = element?.getAnimations().find(animation =>
+        (animation.effect as KeyframeEffect | null)?.getKeyframes().some(frame => String(frame.transform).includes("scale(0)")));
+      if (!element || !animation) return null;
+      animation.pause();
+      const frames = (animation.effect as KeyframeEffect).getKeyframes();
+      return {
+        transforms: frames.map(frame => String(frame.transform)),
+        filters: frames.map(frame => String(frame.filter)),
+        clipPaths: element.getAnimations().flatMap(animation =>
+          (animation.effect as KeyframeEffect).getKeyframes().map(frame => String(frame.clipPath))),
+      };
+    });
+    const implosion = await implosionHandle.jsonValue() as {
+      transforms: string[]; filters: string[]; clipPaths: string[];
+    } | null;
+    if (!implosion) throw new Error("Preview did not expose its implosion animation");
+    assert(implosion.transforms.some(transform => transform.includes("scale(1.5)")),
+      "The preview should show a brief expansion before the implosion");
+    assert(implosion.transforms.at(-1)?.includes("scale(0)"),
+      "The preview should collapse the button to zero");
+    assert(implosion.filters.every(filter => filter.includes("brightness(0)")));
+    assert.equal(implosion.filters.every(filter => filter.includes("invert(1)")), theme === "dark");
+    assert(implosion.clipPaths.some(path => path.startsWith("polygon(") && path.includes("px")),
+      "The preview should use a very thin four-point star during retraction");
+    assert.equal(await page.locator('canvas[data-denied-ui]').count(), 0,
+      "The implosion preview must not create a shard canvas");
     assert.equal(await page.locator('[data-denied-ui="outline"]').count(), 0,
-      "The blinking white outline must be gone before the shard burst");
+      "The blinking white outline must be gone before the implosion");
+    await button.evaluate(element => element.getAnimations().forEach(animation => animation.play()));
     await button.waitFor({ state: "detached" });
-    await page.locator('canvas[data-denied-ui="burst"]').waitFor({ state: "detached" });
     assert.equal(await page.locator("#unwanted").count(), 1, "Button demo must leave the conversation alone");
     await reset.click();
     assert(await button.isVisible(), "Reset must restore the sample button");
     assert.equal(await page.locator('[data-denied-ui]').count(), 0);
-    console.log(`PASS: sample button spins, shatters, is removed and resets in ${theme} mode`);
+    console.log(`PASS: sample button spins, expands, implodes, and resets in ${theme} mode`);
   }
 
   // Diagnostic comparison in an actual browser: the same transformed button
@@ -61,7 +89,8 @@ try {
         continue;
       }
       animation.pause();
-      animation.currentTime = 400;
+      // Sample after the 600ms blink and 120ms pause, once wobble is active.
+      animation.currentTime = 1000;
     }
     const box = stage.getBoundingClientRect();
     const visibleOutside = () => {

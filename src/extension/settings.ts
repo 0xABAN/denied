@@ -1,5 +1,5 @@
 export const DEFAULTS = {
-  enabled: true, animate: true, toast: true, mode: "remove" as "remove" | "highlight",
+  enabled: true, animate: true, mode: "remove" as "remove" | "highlight",
   apiBase: "http://127.0.0.1:8765",
 };
 export type Settings = typeof DEFAULTS;
@@ -17,9 +17,9 @@ export function apiBase(value: unknown): string {
 
 export function settingsFrom(value: unknown): Settings {
   const s = value as Settings;
-  if (!s || [s.enabled, s.animate, s.toast].some(v => typeof v !== "boolean") ||
+  if (!s || [s.enabled, s.animate].some(v => typeof v !== "boolean") ||
       !["remove", "highlight"].includes(s.mode)) throw new Error("Invalid settings");
-  return { enabled: s.enabled, animate: s.animate, toast: s.toast, mode: s.mode, apiBase: apiBase(s.apiBase) };
+  return { enabled: s.enabled, animate: s.animate, mode: s.mode, apiBase: apiBase(s.apiBase) };
 }
 
 /** Upgrade legacy paused installs; the worker owns the one-time marker. */

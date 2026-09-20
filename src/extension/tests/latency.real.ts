@@ -50,7 +50,7 @@ const site = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch() {
     `<p>School garden ${i} has flowers and butterflies.</p>`).join("")}</body></html>`,
     { headers: { "Content-Type": "text/html" } });
 } });
-const extension = await launchExtension({ enabled: true, animate: false, toast: false, apiBase: `http://127.0.0.1:${proxy.port}` });
+const extension = await launchExtension({ enabled: true, animate: false, apiBase: `http://127.0.0.1:${proxy.port}` });
 const { context } = extension;
 try {
   const page = await context.newPage();

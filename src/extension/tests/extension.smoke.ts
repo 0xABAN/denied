@@ -103,15 +103,17 @@ try {
   await add("animated", SCAM);
   await page.waitForFunction(() => document.querySelector("#animated")?.getAnimations().some(a => a.effect?.getTiming().duration === 600));
   assert.equal(await page.locator('[data-denied-ui="glint"]').count(), 1,
-    "A real Jev-triggered removal must use the glass-glint renderer");
+    "A real Jev-triggered removal must use the glint wind-up renderer");
   await mkdir("artifacts", { recursive: true });
-  await page.waitForSelector("canvas[data-denied-ui='burst']");
-  await page.screenshot({ path: "artifacts/real-burst.png" });
+  await page.waitForFunction(() => document.querySelector("#animated")?.getAnimations().some(animation =>
+    (animation.effect as KeyframeEffect | null)?.getKeyframes().some(frame => String(frame.transform).includes("scale(0)"))));
+  await page.screenshot({ path: "artifacts/real-implosion.png" });
   await page.waitForSelector("#animated", { state: "detached" });
-  await page.waitForSelector("canvas[data-denied-ui='burst']", { state: "detached" });
+  assert.equal(await page.locator("canvas[data-denied-ui]").count(), 0,
+    "A real Jev-triggered removal must not create a decorative canvas");
   assert.equal(await page.locator('[data-denied-ui="glint"]').count(), 0);
   assert.equal((await stats()).total, 3);
-  pass("real flagged content spins with a glass glint, explodes, counts once, and cleans up");
+  pass("real flagged content spins, expands, implodes, counts once, and cleans up");
 
   for (const interaction of ["hover", "scroll"]) {
     await configure({ enabled: false });

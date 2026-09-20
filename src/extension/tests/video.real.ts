@@ -41,7 +41,7 @@ const site = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request) {
     window.playbackStarted = window.playingVideo.play();
   </script></body></html>`, { headers: { "Content-Type": "text/html" } });
 } });
-const extension = await launchExtension({ enabled: true, animate: false, toast: false, apiBase: observer.url });
+const extension = await launchExtension({ enabled: true, animate: false, apiBase: observer.url });
 const { context, worker } = extension;
 try {
   const page = await context.newPage();

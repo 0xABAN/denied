@@ -193,11 +193,13 @@ export const adapters: readonly SiteAdapter[] = [
     rules: [{ selector: '.react-results--main > li, article[data-testid="result"]:not(.react-results--main > li article)', content: 'h2, [data-testid="result-title-a"]' }],
   },
 
-  // Inbox rows can represent multiple emails. Only opened, individual emails expand.
+  // List rows expose sender/subject/snippet evidence; opened messages expose
+  // their body. Both are independently bounded Gmail items, so Spam and other
+  // mail views can be filtered without needing to open each message.
   {
     id: "gmail", hosts: ["mail.google.com"], routes: /^\/mail\//,
-    protected: "tr.zA, .M9, [role=navigation]",
-    rules: [{ selector: "div.adn", content: ".a3s", preserve: "div.adn, .ip.iq" }],
+    protected: ".M9, [role=navigation]",
+    rules: [{ selector: "tr.zA, div.adn", content: ".y6, .bog, .y2, .a3s", preserve: "div.adn, .ip.iq" }],
   },
 
   // A conversation ID is not a message ID. Never target ConversationContainer.
