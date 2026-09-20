@@ -1,9 +1,8 @@
 // Actual Chromium -> FastAPI -> Jev -> Tiger Data, isolated in a disposable DB schema.
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { chromium, type BrowserContext } from "playwright";
+import { resolve } from "node:path";
+import { launchExtension } from "./browser";
 import type { Batch, Judgments, PageStats, Removal } from "../contracts";
 import { localAPI, until } from "./api";
 import { observeJudgments } from "./observe-judgments";
@@ -12,12 +11,11 @@ const token = Bun.env.BACKEND_API_TOKEN;
 assert(token && token.length >= 32, "Configure BACKEND_API_TOKEN; real storage tests cannot run without it");
 assert(Bun.env.PGHOST || Bun.env.TIGER_DATABASE_URL || Bun.env.TIMESCALE_SERVICE_URL, "A real Tiger database is required");
 const schema = `denied_test_${crypto.randomUUID().replaceAll("-", "")}`;
-const profile = await mkdtemp(join(tmpdir(), "denied-tiger-"));
 const site = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response(Bun.file("src/extension/tests/page.html")) });
 const pageUrl = `http://127.0.0.1:${site.port}/`;
 const SCAM = "Your bank account will be deleted in ten minutes. Reply with your password and verification code so our agent can save it.";
 let api: Awaited<ReturnType<typeof localAPI>> | undefined;
-let context: BrowserContext | undefined;
+let extension: Awaited<ReturnType<typeof launchExtension>> | undefined;
 let observer: ReturnType<typeof observeJudgments> | undefined;
 const reports: Removal[] = [];
 const evaluated: { batch: Batch; result: Judgments }[] = [];
@@ -82,27 +80,19 @@ try {
   assert.equal((await rows()).length, 0);
   assert.equal((await judgments()).length, 0);
 
-  context = await chromium.launchPersistentContext(profile, {
-    channel: "chromium", headless: true, viewport: { width: 1100, height: 900 },
-    env: { PATH: process.env.PATH!, HOME: process.env.HOME!, TMPDIR: tmpdir() },
-    args: [`--disable-extensions-except=${resolve("dist")}`, `--load-extension=${resolve("dist")}`],
-  });
-  context.on("request", request => {
-    if (request.url() === `${observer!.url}/outcomes`) reports.push(request.postDataJSON());
-  });
   observer = observeJudgments(api.url, batch => batch, (batch, status, result) => {
     if (status === 200 && result) evaluated.push({ batch, result });
     else captureFailed = true;
   });
-  const worker = context.serviceWorkers()[0] || await context.waitForEvent("serviceworker");
-  const extensionId = new URL(worker.url()).host;
+  extension = await launchExtension({ apiBase: observer.url, enabled: false }, {
+    viewport: { width: 1100, height: 900 },
+    env: { PATH: process.env.PATH!, HOME: process.env.HOME!, TMPDIR: tmpdir() },
+  });
+  const { context, worker, configure } = extension;
+  context.on("request", request => {
+    if (request.url() === `${observer!.url}/outcomes`) reports.push(request.postDataJSON());
+  });
   const page = await context.newPage();
-  const popup = await context.newPage();
-  await popup.goto(`chrome-extension://${extensionId}/popup.html`);
-  await popup.locator("details summary").click();
-  await popup.locator("#apiBase").fill(observer.url);
-  await popup.locator("#save").click();
-  await popup.waitForFunction(() => document.querySelector("#service-status")?.textContent?.includes("API ready"));
   await page.goto(pageUrl);
   const tab = await worker.evaluate(async url => (await chrome.tabs.query({})).find(t => t.url === url)?.id, pageUrl);
   assert(tab !== undefined);
@@ -113,7 +103,7 @@ try {
   }, { id, text });
 
   await until(async () => Boolean(await stats().catch(() => null)), "content script ready");
-  await popup.locator("#enabled").check();
+  await configure({ enabled: true });
   await page.bringToFront();
   await page.waitForSelector("#ad-card", { state: "detached" });
   await page.waitForSelector("#unsafe", { state: "detached" });
@@ -177,13 +167,13 @@ try {
   assert.equal((await rows()).length, 2);
   console.log("PASS: server-owned classifications cannot be tampered with; duplicate reports are idempotent; reads require a token");
 
-  await popup.locator("#mode").selectOption("highlight");
+  await configure({ mode: "highlight" });
   await add("history-highlight", SCAM);
   await page.waitForSelector("#history-highlight [data-denied-ui]");
   assert.equal((await rows()).length, 2, "Highlighting was counted as removal");
   await until(async () => (await judgments()).filter(row => row.text === SCAM).length >= 2, "highlight judgment recorded without a removal");
   await page.locator("#history-highlight").evaluate(el => el.remove());
-  await popup.locator("#mode").selectOption("remove");
+  await configure({ mode: "remove" });
   await page.bringToFront();
   await add("history-stale", SCAM);
   await page.waitForFunction(() => !!document.querySelector("#history-stale")?.getAnimations().length);
@@ -253,11 +243,10 @@ try {
   assert.equal(finalMetrics.unsafe_content, 4);
   console.log("PASS: separate entity scores persist in judgments and signed removals and count once under unsafe content");
 } finally {
-  await context?.close();
+  await extension?.close();
   site.stop(true);
   await api?.stop();
   observer?.stop();
-  await rm(profile, { recursive: true, force: true });
   await database("cleanup");
 }
 console.log("Real Tiger Data integration checks passed; disposable schema removed.");
