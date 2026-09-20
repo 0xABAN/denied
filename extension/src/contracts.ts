@@ -1,7 +1,7 @@
 export const OWN = "data-denied-ui";
 export const MAX_BATCH = 600;
 export const DEFAULTS = {
-  enabled: false, animate: true, toast: true, mode: "remove" as "remove" | "highlight",
+  enabled: true, animate: true, toast: true, mode: "remove" as "remove" | "highlight",
   apiBase: "http://127.0.0.1:8765",
 };
 export type Settings = typeof DEFAULTS;

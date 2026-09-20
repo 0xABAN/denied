@@ -1,9 +1,19 @@
 import { DEFAULTS, MAX_BATCH, apiBase, settingsFrom, zeroCounts, type Batch, type Counts, type Removal, type Settings } from "./contracts";
 import { BLOCKS_PER_REQUEST } from "./scheduling";
 import { enqueueJudgment } from "./transport";
+import { startupSettings } from "./settings";
 
 type Ledger = { total: Counts; documents: Record<string, Counts> };
-const ready = chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
+const ready = (async () => {
+  await chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
+  const stored = await chrome.storage.local.get<{ settings?: Partial<Settings>; automaticDefaultsApplied?: boolean }>(
+    ["settings", "automaticDefaultsApplied"]);
+  if (!stored.automaticDefaultsApplied) {
+    await chrome.storage.local.set({
+      settings: startupSettings(stored.settings, false), automaticDefaultsApplied: true,
+    });
+  }
+})();
 let writes: Promise<unknown> = Promise.resolve();
 
 async function settings(): Promise<Settings> {
