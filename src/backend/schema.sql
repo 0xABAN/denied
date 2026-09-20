@@ -1,4 +1,4 @@
--- Identifiers are quoted by telemetry.initialize(). Both tables use event time
+-- Identifiers are quoted by telemetry.initialize(). All tables use event time
 -- in one UTC date column; durations remain separate from timestamps.
 CREATE TABLE IF NOT EXISTS {table} (
     event_id UUID PRIMARY KEY,
@@ -71,6 +71,23 @@ CREATE TABLE IF NOT EXISTS {judgments} (
 ALTER TABLE {judgments} ADD COLUMN IF NOT EXISTS violent_entity_score DOUBLE PRECISION
     CHECK (violent_entity_score BETWEEN 0 AND 1);
 CREATE INDEX IF NOT EXISTS judgments_date_idx ON {judgments} (date DESC);
+
+-- Host-only domain decisions are kept separately from passage evidence.
+CREATE TABLE IF NOT EXISTS {domain_judgments} (
+    event_id UUID PRIMARY KEY,
+    date TIMESTAMPTZ NOT NULL,
+    document_id TEXT NOT NULL,
+    page_host TEXT NOT NULL,
+    page_scheme TEXT NOT NULL CHECK (page_scheme IN ('http', 'https')),
+    unsafe_score DOUBLE PRECISION NOT NULL CHECK (unsafe_score BETWEEN 0 AND 1),
+    block BOOLEAN NOT NULL,
+    safety_threshold DOUBLE PRECISION NOT NULL CHECK (safety_threshold BETWEEN 0 AND 1),
+    policy_version TEXT NOT NULL,
+    model_version TEXT NOT NULL,
+    judge_ms INTEGER NOT NULL CHECK (judge_ms >= 0),
+    UNIQUE (document_id, page_host, page_scheme)
+);
+CREATE INDEX IF NOT EXISTS domain_judgments_date_idx ON {domain_judgments} (date DESC);
 
 -- Existing installations stored passages; independent requests now retain a whole block.
 ALTER TABLE {judgments} DROP CONSTRAINT IF EXISTS judgments_text_check;

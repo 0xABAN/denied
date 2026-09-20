@@ -18,9 +18,9 @@ from tempfile import NamedTemporaryFile
 import httpx
 from pydantic import ValidationError
 
-from denied.judge import ADDRESS_CONTEXT, AD_CRITERIA, POLICY_VERSION, SAFETY_CRITERIA, VIOLENT_ENTITIES, build_request, judge
+from denied.judge import ADDRESS_CONTEXT, AD_CRITERIA, DOMAIN_CRITERIA, DOMAIN_QUESTION, POLICY_VERSION, SAFETY_CRITERIA, VIOLENT_ENTITIES, build_domain_request, build_request, judge
 from denied.dispatch import Admission
-from denied.schemas import Batch, Judgments, Noul
+from denied.schemas import Batch, DomainJudgment, DomainRequest, Judgments, Noul
 from denied import telemetry
 
 BATCH = {
@@ -273,6 +273,33 @@ class ApiTests(unittest.TestCase):
         self.assertIn("Do not transfer evidence from other candidates", request["questions"]["unsafe_0"]["instructions"])
         with server() as client:
             self.assertEqual(client.get("/health").json()["safety_threshold"], 0.60)
+
+    def test_domain_request_uses_only_the_current_host(self):
+        domain = DomainRequest(document_id="domain-test", page_host="giveaway.example", page_scheme="https")
+        request = build_domain_request(domain)
+        self.assertEqual(request["model"], "jev-latest")
+        self.assertEqual(set(request["questions"]), {"domain"})
+        self.assertEqual(request["state"]["domain"], {"host": "giveaway.example", "scheme": "https"})
+        self.assertEqual(request["state"]["policy"], {"address_context": ADDRESS_CONTEXT, "domain": DOMAIN_CRITERIA})
+        self.assertIn(DOMAIN_QUESTION, request["questions"]["domain"]["instructions"])
+        self.assertNotIn("path", json.dumps(request))
+
+    def test_domain_endpoint_has_a_typed_boundary(self):
+        with server(TYPESAFE_API_KEY="") as client:
+            valid = {"document_id": "domain-test", "page_host": "bad.example", "page_scheme": "https"}
+            self.assertEqual(client.post("/judge-domain", json=valid).status_code, 503)
+            self.assertEqual(client.post("/judge-domain", json={**valid, "page_scheme": "file"}).status_code, 422)
+            self.assertEqual(client.post("/judge-domain", json={**valid, "host": "ignored"}).status_code, 422)
+
+    def test_domain_judgment_history_keeps_only_host_evidence(self):
+        domain = DomainRequest(document_id="domain-test", page_host="bad.example", page_scheme="https")
+        judgment = DomainJudgment(document_id="domain-test", page_host="bad.example", page_scheme="https",
+                                  policy_version="10", unsafe_score=0.95, block=True)
+        row = telemetry.prepare_domain_judgment(domain, judgment, 123, 0.60, "jev-latest")
+        self.assertEqual(row["page_host"], "bad.example")
+        self.assertTrue(row["block"])
+        self.assertEqual(row["unsafe_score"], 0.95)
+        self.assertNotIn("text", row)
 
     def test_pre_entity_receipts_remain_valid(self):
         # Use an actual advertising judgment, then encode the signed pre-v9

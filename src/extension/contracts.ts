@@ -22,6 +22,26 @@ export type Removal = {
 };
 export type Judgments = { document_id: string; policy_version: string; results: Decision[] };
 export type PageStats = Counts & { checked: number; pending: number; deferred: number; error: string | null; recording_error: string | null };
+export type DomainRequest = { document_id: string; page_host: string; page_scheme: "http" | "https" };
+export type DomainJudgment = DomainRequest & { policy_version: string; unsafe_score: number; block: boolean };
+
+export function isDomainRequest(value: unknown): value is DomainRequest {
+  const candidate = value as Partial<DomainRequest> | null;
+  return Boolean(candidate && typeof candidate.document_id === "string" && candidate.document_id.length > 0 &&
+    candidate.document_id.length <= 80 && typeof candidate.page_host === "string" && candidate.page_host.length > 0 &&
+    candidate.page_host.length <= 253 && (candidate.page_scheme === "http" || candidate.page_scheme === "https"));
+}
+
+export function domainJudgmentFrom(value: unknown, request: DomainRequest): DomainJudgment {
+  const body = value as Partial<DomainJudgment> | null;
+  if (!body || body.document_id !== request.document_id || body.page_host !== request.page_host ||
+      body.page_scheme !== request.page_scheme || typeof body.policy_version !== "string" ||
+      typeof body.unsafe_score !== "number" || !Number.isFinite(body.unsafe_score) ||
+      body.unsafe_score < 0 || body.unsafe_score > 1 || typeof body.block !== "boolean") {
+    throw new Error("Invalid domain judgment response");
+  }
+  return body as DomainJudgment;
+}
 
 /** Validate the remote boundary without a second schema dependency. */
 export function judgmentsFrom(value: unknown, batch: Batch): Judgments {

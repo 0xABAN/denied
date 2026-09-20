@@ -17,8 +17,8 @@ from dotenv import load_dotenv
 from pydantic import ValidationError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from .judge import MODEL_VERSION, POLICY_VERSION, judge
-from .schemas import Batch, Wave
+from .judge import MODEL_VERSION, POLICY_VERSION, judge, judge_domain
+from .schemas import Batch, DomainRequest, Wave
 from . import telemetry
 from .dispatch import Admission
 from .reuse import DocumentReuse
@@ -139,6 +139,22 @@ def create_app() -> FastAPI:
         batch = await read_judgment_request(request, Batch)
         return await evaluate_batch(batch, background)
 
+    @api.post("/judge-domain")
+    async def evaluate_domain(request: Request, background: BackgroundTasks):
+        domain = await read_judgment_request(request, DomainRequest)
+        try:
+            async with api.state.slots:
+                started = perf_counter()
+                judgment = await judge_domain(api.state.client, domain, key, safety_threshold, api.state.admission)
+        except (TimeoutError, httpx.TimeoutException):
+            raise Unavailable(504, "Domain judgment timed out; site was not blocked") from None
+        except (httpx.HTTPError, ValueError, KeyError, TypeError):
+            raise Unavailable(502, "Domain provider unavailable or returned an invalid judgment") from None
+        if recording:
+            background.add_task(record_domain_judgment, telemetry.prepare_domain_judgment(
+                domain, judgment, round((perf_counter() - started) * 1000), safety_threshold, MODEL_VERSION))
+        return judgment
+
     @api.post("/judge-stream")
     async def evaluate_wave(request: Request, background: BackgroundTasks):
         """Avoid browser HTTP/1 connection queuing without holding fast results.
@@ -186,6 +202,12 @@ def create_app() -> FastAPI:
         # through /health, never as an exception after a successful HTTP response.
         try:
             await storage_call(telemetry.insert_judgments, rows)
+        except Unavailable:
+            pass
+
+    async def record_domain_judgment(row: dict):
+        try:
+            await storage_call(telemetry.insert_domain_judgment, row)
         except Unavailable:
             pass
 

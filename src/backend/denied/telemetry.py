@@ -16,7 +16,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from pydantic import AwareDatetime, Field
 
-from .schemas import Batch, Decision, Host, Identifier, Judgments, StrictModel
+from .schemas import Batch, Decision, DomainJudgment, DomainRequest, Host, Identifier, Judgments, StrictModel
 
 
 class Claim(StrictModel):
@@ -79,7 +79,8 @@ def initialize() -> None:
         connection.execute(sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(sql.Identifier(schema_name())))
         statement = Path(__file__).resolve().parents[1].joinpath("schema.sql").read_text()
         connection.execute(sql.SQL(statement).format(
-            table=table(), judgments=table("judgments"), schema=sql.Literal(schema_name()),
+            table=table(), judgments=table("judgments"), domain_judgments=table("domain_judgments"),
+            schema=sql.Literal(schema_name()),
         ))
 
 
@@ -127,6 +128,29 @@ def insert_judgments(rows: list[dict]) -> None:
     with connect() as connection, connection.cursor() as cursor:
         cursor.executemany(_insert_statement("judgments", rows[0]),
                            ({**row, "links": Jsonb(row["links"]), "ad": Jsonb(row["ad"])} for row in rows))
+
+
+def prepare_domain_judgment(domain: DomainRequest, judgment: DomainJudgment, judge_ms: int,
+                            safety_threshold: float, model_version: str) -> dict:
+    date = datetime.now(timezone.utc)
+    return {
+        "event_id": uuid5(NAMESPACE_OID, json.dumps([domain.document_id, domain.page_host, domain.page_scheme])),
+        "date": date,
+        "document_id": domain.document_id,
+        "page_host": domain.page_host,
+        "page_scheme": domain.page_scheme,
+        "unsafe_score": judgment.unsafe_score,
+        "block": judgment.block,
+        "safety_threshold": safety_threshold,
+        "policy_version": judgment.policy_version,
+        "model_version": model_version,
+        "judge_ms": judge_ms,
+    }
+
+
+def insert_domain_judgment(row: dict) -> None:
+    with connect() as connection:
+        connection.execute(_insert_statement("domain_judgments", row), row)
 
 
 def removal_row(item: Removal, key: str) -> dict:

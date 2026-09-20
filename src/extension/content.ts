@@ -1,5 +1,6 @@
-import { OWN, MAX_BATCH, judgmentsFrom, zeroCounts, type Batch, type Candidate, type Decision, type PageStats, type Removal } from "./contracts";
+import { OWN, MAX_BATCH, domainJudgmentFrom, judgmentsFrom, zeroCounts, type Batch, type Candidate, type Decision, type PageStats, type Removal } from "./contracts";
 import { DEFAULTS, type Settings } from "./settings";
+import { domainRequest } from "./domain-gate";
 import { discover, evidence, owns, visibleItem, type Evidence } from "./scan";
 import { renderedParent } from "./dom";
 import { ownershipAttributes } from "./adapters";
@@ -28,6 +29,8 @@ let recordingError: string | null = null;
 let policyVersion = "";
 let overflow = 0;
 let skipped = new WeakSet<HTMLElement>();
+let domainCheck: Promise<boolean> | undefined;
+let domainReady = false;
 const mutationOptions: MutationObserverInit = {
   subtree: true, childList: true, characterData: true, attributes: true,
   attributeFilter: ["href", "src", "srcset", "poster", "data", "type", "title", "alt", "aria-description", "itemprop",
@@ -48,7 +51,27 @@ function stats(): PageStats {
 
 function schedule(delay = 600): void {
   // Leading-edge scheduling prevents continuous mutations from starving the queue.
-  if (timer === undefined && settings.enabled) timer = setTimeout(() => { timer = undefined; void flush(); }, delay);
+  if (timer === undefined && settings.enabled && domainReady) timer = setTimeout(() => { timer = undefined; void flush(); }, delay);
+}
+
+/** Check the top-level host once before allowing the page scanner to start. */
+function gateDomain(): Promise<boolean> {
+  if (!settings.enabled) return Promise.resolve(true);
+  if (domainCheck) return domainCheck;
+  const request = domainRequest(documentId, location.hostname, location.protocol);
+  domainCheck = (async () => {
+    try {
+      const response = await chrome.runtime.sendMessage({ type: "domain", domain: request });
+      if (response?.error) throw new Error(response.error);
+      const judgment = domainJudgmentFrom(response, request);
+      if (settings.enabled && judgment.block) return false;
+    } catch (error) {
+      // Domain failures fail open, matching ordinary block-check failures.
+      lastError = error instanceof Error ? `Domain check unavailable: ${error.message}` : "Domain check unavailable";
+    }
+    return true;
+  })();
+  return domainCheck;
 }
 
 function reset(): void {
@@ -244,7 +267,7 @@ async function flush(): Promise<void> {
 }
 
 const observer = new MutationObserver(mutations => {
-  if (!settings.enabled) return;
+  if (!settings.enabled || !domainReady) return;
   for (const mutation of mutations) {
     const root = mutation.target instanceof ShadowRoot ? mutation.target.host :
       mutation.target instanceof Element ? mutation.target : mutation.target.parentElement;
@@ -271,13 +294,28 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     debug: { busy: activeWaves > 0, activeWaves, roots: roots.size, targets: [...records].filter(([, t]) => ["pending", "checking"].includes(t.state)).map(([el, t]) => ({ id: t.id, state: t.state, visible: visibleItem(el) })) },
   } : {}) });
   if (message?.type === "rescan") { reset(); respond({ ok: true }); }
-  if (message?.type === "settingsChanged") { settings = message.settings; reset(); respond({ ok: true }); }
+  if (message?.type === "settingsChanged") {
+    settings = message.settings;
+    if (!settings.enabled) {
+      domainReady = false;
+      reset();
+    } else if (!domainCheck) {
+      domainReady = false;
+      void gateDomain().then(allowed => { if (allowed) { domainReady = true; reset(); } });
+    } else {
+      domainReady = true;
+      reset();
+    }
+    respond({ ok: true });
+  }
 });
 
-void chrome.runtime.sendMessage({ type: "settings" }).then(response => {
+void chrome.runtime.sendMessage({ type: "settings" }).then(async response => {
   if (response?.error) throw new Error(response.error);
   settings = response.settings;
   observer.observe(document.documentElement, mutationOptions);
+  if (!(await gateDomain())) return;
+  domainReady = true;
   reset();
   let scrollTimer: ReturnType<typeof setTimeout>;
   addEventListener("scroll", () => {

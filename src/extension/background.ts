@@ -1,4 +1,5 @@
-import { MAX_BATCH, zeroCounts, type Batch, type Counts, type Removal } from "./contracts";
+import { domainJudgmentFrom, isDomainRequest, MAX_BATCH, zeroCounts, type Batch, type Counts, type DomainJudgment, type DomainRequest, type Removal } from "./contracts";
+import { blockedPageUrl, domainRequest } from "./domain-gate";
 import { DEFAULTS, apiBase, settingsFrom, startupSettings, type Settings } from "./settings";
 import { BLOCKS_PER_REQUEST } from "./scheduling";
 import { enqueueJudgment } from "./transport";
@@ -15,6 +16,9 @@ const ready = (async () => {
   }
 })();
 let writes: Promise<unknown> = Promise.resolve();
+let navigationSequence = 0;
+type DomainPreflight = { url: string; request: DomainRequest; promise: Promise<DomainJudgment | null> };
+const domainPreflights = new Map<number, DomainPreflight>();
 
 async function settings(): Promise<Settings> {
   await ready;
@@ -22,7 +26,7 @@ async function settings(): Promise<Settings> {
   return settingsFrom({ ...DEFAULTS, ...stored.settings });
 }
 
-async function request(path: "/health" | "/outcomes", payload?: Removal): Promise<unknown> {
+async function request(path: "/health" | "/outcomes" | "/judge-domain", payload?: Removal | DomainRequest): Promise<unknown> {
   const config = await settings();
   const response = await fetch(`${apiBase(config.apiBase)}${path}`, {
     method: payload ? "POST" : "GET",
@@ -34,6 +38,29 @@ async function request(path: "/health" | "/outcomes", payload?: Removal): Promis
   const body = await response.json();
   if (!response.ok) throw new Error(typeof body.error === "string" ? body.error.slice(0, 200) : `API error ${response.status}`);
   return body;
+}
+
+async function checkDomain(domain: DomainRequest): Promise<DomainJudgment | null> {
+  const config = await settings();
+  if (!config.enabled) return null;
+  return domainJudgmentFrom(await request("/judge-domain", domain), domain);
+}
+
+function startDomainPreflight(tabId: number, url: string, domain: DomainRequest, force = false): DomainPreflight {
+  const existing = domainPreflights.get(tabId);
+  if (!force && existing?.url === url && existing.request.page_host === domain.page_host &&
+      existing.request.page_scheme === domain.page_scheme) return existing;
+
+  const entry: DomainPreflight = { url, request: domain, promise: checkDomain(domain) };
+  domainPreflights.set(tabId, entry);
+  void entry.promise.then(judgment => {
+    const current = domainPreflights.get(tabId);
+    if (!judgment?.block || current !== entry) return;
+    return chrome.tabs.update(tabId, { url: blockedPageUrl(chrome.runtime.getURL("")) });
+  }).catch(() => {
+    // A failed preflight leaves the document or browser error untouched.
+  });
+  return entry;
 }
 
 function validCounts(value: Counts): boolean {
@@ -78,6 +105,15 @@ async function handle(message: any, sender: chrome.runtime.MessageSender): Promi
           !batch.candidates.length || batch.candidates.length > BLOCKS_PER_REQUEST) throw new Error("Invalid batch");
       if (new TextEncoder().encode(JSON.stringify(batch)).length > 2_000_000) throw new Error("Batch too large");
       return enqueueJudgment(config.apiBase, batch);
+    }
+    case "domain": {
+      const config = await settings();
+      if (!page || !config.enabled || !isDomainRequest(message.domain)) throw new Error("Invalid domain request");
+      if (sender.tab?.id === undefined || !sender.url) throw new Error("Missing page navigation context");
+      const preflight = startDomainPreflight(sender.tab.id, sender.url, message.domain);
+      const judgment = await preflight.promise;
+      if (!judgment) throw new Error("Filtering is disabled");
+      return { ...judgment, document_id: message.domain.document_id };
     }
     case "removal": {
       if (!page) throw new Error("Removal records require a page");
@@ -128,6 +164,17 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
 
 chrome.tabs.onUpdated.addListener((tabId, change) => {
   if (change.status === "loading") void chrome.action.setBadgeText({ tabId, text: "" }).catch(() => {});
+});
+chrome.tabs.onRemoved.addListener(tabId => { domainPreflights.delete(tabId); });
+chrome.webNavigation.onBeforeNavigate.addListener(details => {
+  if (details.frameId !== 0 || !/^https?:/i.test(details.url)) return;
+  try {
+    const page = new URL(details.url);
+    const domain = domainRequest(`navigation-${details.tabId}-${++navigationSequence}`, page.hostname, page.protocol);
+    startDomainPreflight(details.tabId, details.url, domain, true);
+  } catch {
+    // Unsupported or malformed navigation URLs are left to Chrome unchanged.
+  }
 });
 chrome.runtime.onStartup.addListener(() => {
   // Old document IDs cannot replay after a browser restart; preserve only aggregate counts.

@@ -55,6 +55,23 @@ class Batch(StrictModel):
         return self
 
 
+class DomainRequest(StrictModel):
+    """Host-only evidence for the top-level domain gate."""
+
+    document_id: Identifier
+    page_host: Annotated[str, Field(min_length=1, max_length=253)]
+    page_scheme: Literal["http", "https"]
+
+
+class DomainJudgment(StrictModel):
+    document_id: Identifier
+    page_host: Annotated[str, Field(min_length=1, max_length=253)]
+    page_scheme: Literal["http", "https"]
+    policy_version: str
+    unsafe_score: Probability
+    block: bool
+
+
 class Noul(StrictModel):
     type: Literal["noul"]
     noul: Probability
