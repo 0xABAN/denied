@@ -1,5 +1,6 @@
 import { judgmentsFrom, type Batch, type Judgments } from "./contracts";
 import { apiBase } from "./settings";
+import { LineDecoder } from "./ndjson";
 
 type Pending = {
   batch: Batch;
@@ -51,8 +52,7 @@ async function deliver(base: string, items: Pending[]): Promise<void> {
     });
     if (!response.ok || !response.body) throw new Error(`Judgment stream unavailable (${response.status})`);
     const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
+    const decoder = new LineDecoder();
 
     function accept(line: string): void {
       const message = JSON.parse(line);
@@ -72,17 +72,9 @@ async function deliver(base: string, items: Pending[]): Promise<void> {
     try {
       while (true) {
         const { value, done } = await reader.read();
-        buffer += decoder.decode(value, { stream: !done });
-        let newline: number;
-        while ((newline = buffer.indexOf("\n")) >= 0) {
-          const line = buffer.slice(0, newline);
-          buffer = buffer.slice(newline + 1);
-          if (line) accept(line);
-        }
-        if (buffer.length > 1_000_000) throw new Error("Oversized streamed result");
+        for (const line of decoder.decode(value, done)) if (line) accept(line);
         if (done) break;
       }
-      if (buffer.trim()) throw new Error("Truncated judgment stream");
       if (items.some(item => !item.done)) throw new Error("Incomplete judgment stream");
     } finally {
       await reader.cancel().catch(() => {});

@@ -1,4 +1,5 @@
 import type { Batch, Judgments } from "../contracts";
+import { LineDecoder } from "../ndjson";
 
 /** Forward genuine bytes unchanged while observing each result line.
  * Chrome's CDP cache does not reliably retain streamed worker response bodies.
@@ -30,15 +31,11 @@ export function observeJudgments<T>(apiURL: string,
         records.forEach((_, index) => settle(index, response.status, result));
         return new Response(text, { status: response.status, headers: response.headers });
       }
-      const decoder = new TextDecoder();
-      let buffer = "";
+      const decoder = new LineDecoder();
       const stream = response.body!.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
         transform(chunk, controller) {
-          buffer += decoder.decode(chunk, { stream: true });
-          let newline: number;
-          while ((newline = buffer.indexOf("\n")) >= 0) {
-            const message = JSON.parse(buffer.slice(0, newline));
-            buffer = buffer.slice(newline + 1);
+          for (const line of decoder.decode(chunk)) {
+            const message = JSON.parse(line);
             settle(message.index, message.error ? 502 : 200, message.result);
           }
           controller.enqueue(chunk);

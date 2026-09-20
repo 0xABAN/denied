@@ -1,6 +1,7 @@
 /** Measure browser transport concurrency while forwarding genuine API responses. */
 import assert from "node:assert/strict";
 import { launchExtension } from "./browser";
+import { LineDecoder } from "../ndjson";
 import { localAPI, until } from "./api";
 
 const api = await localAPI();
@@ -20,21 +21,17 @@ const proxy = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
       method: request.method, headers: { "Content-Type": "application/json" }, body: input,
     });
     const reader = response.body!.getReader();
-    const decoder = new TextDecoder();
+    const decoder = new LineDecoder();
     const chunks: ArrayBuffer[] = [];
-    let buffer = "";
     while (true) {
       const { value, done } = await reader.read();
       if (value) chunks.push(new Uint8Array(value).buffer);
-      buffer += decoder.decode(value, { stream: !done });
-      let newline: number;
-      while ((newline = buffer.indexOf("\n")) >= 0) {
-        const line = JSON.parse(buffer.slice(0, newline));
+      for (const text of decoder.decode(value, done)) {
+        const line = JSON.parse(text);
         assert.ok(line.result && !line.error, "every streamed provider batch succeeds");
         assert.equal(line.result.results.length, 20);
         assert.ok(line.result.results.every((result: { remove: boolean }) => !result.remove));
         resultTimes.push(performance.now() - start);
-        buffer = buffer.slice(newline + 1);
       }
       if (done) break;
     }

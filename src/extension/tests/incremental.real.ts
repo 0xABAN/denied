@@ -1,6 +1,7 @@
 /** Delay one genuine response; never replace Jev's classifications. */
 import assert from "node:assert/strict";
 import { launchExtension } from "./browser";
+import { LineDecoder } from "../ndjson";
 import { localAPI, until } from "./api";
 
 const api = await localAPI();
@@ -27,18 +28,13 @@ const proxy = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
     assert.equal(response.status, 200, "Real Jev request must succeed");
     return new Response(new ReadableStream({ async start(controller) {
       const reader = response.body!.getReader();
-      const decoder = new TextDecoder();
+      const decoder = new LineDecoder();
       const encoder = new TextEncoder();
       const deliveries: Promise<void>[] = [];
-      let buffer = "";
       try {
         while (true) {
           const { value, done } = await reader.read();
-          buffer += decoder.decode(value, { stream: !done });
-          let newline: number;
-          while ((newline = buffer.indexOf("\n")) >= 0) {
-            const line = buffer.slice(0, newline + 1);
-            buffer = buffer.slice(newline + 1);
+          for (const line of decoder.decode(value, done)) {
             const message = JSON.parse(line);
             deliveries.push((async () => {
               if (JSON.stringify(batches[message.index]).includes("School garden")) {
@@ -47,7 +43,7 @@ const proxy = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
               } else {
                 adReturned = true;
               }
-              controller.enqueue(encoder.encode(line));
+              controller.enqueue(encoder.encode(line + "\n"));
             })());
           }
           if (done) break;
