@@ -86,6 +86,18 @@ class ReuseTests(unittest.IsolatedAsyncioTestCase):
         await self.cache.evaluate(batch, self.evaluate)
         self.assertEqual(self.calls, 4)
 
+    async def test_warm_hit_does_not_scan_other_entries(self):
+        batch = Batch.model_validate(BATCH)
+        await self.cache.evaluate(batch, self.evaluate)
+
+        class NoFullScan(type(self.cache.entries)):
+            def items(self):
+                raise AssertionError("Warm lookups must not enumerate the cache")
+
+        self.cache.entries = NoFullScan(self.cache.entries)
+        await self.cache.evaluate(batch, self.evaluate)
+        self.assertEqual(self.calls, 1)
+
     async def test_within_batch_duplicates_reuse_unsigned_scores(self):
         batch = Batch.model_validate(BATCH)
         second = batch.candidates[0].model_copy(update={"id": "2:0"})

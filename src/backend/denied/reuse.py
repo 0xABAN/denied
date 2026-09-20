@@ -39,19 +39,22 @@ class DocumentReuse:
 
     async def evaluate(self, batch: Batch, evaluate: Evaluation) -> tuple[Judgments, int]:
         now = monotonic()
-        for key, entry in list(self.entries.items()):
-            if entry.future.done() and entry.expires <= now:
-                del self.entries[key]
         keys = [self.key(batch, candidate) for candidate in batch.candidates]
-        missing = set(keys) - self.entries.keys()
+        requested = set(keys)
+        # Expire requested keys lazily: a warm hit need not scan the whole cache.
+        for key in requested:
+            entry = self.entries.get(key)
+            if entry and entry.future.done() and entry.expires <= now:
+                del self.entries[key]
+        missing = requested - self.entries.keys()
         # Never evict in-flight work that another caller is sharing. Under load,
         # bypass reuse rather than growing memory or losing valid judgments.
-        for key, entry in list(self.entries.items()):
-            if len(self.entries) + len(missing) <= self.capacity:
-                break
-            if entry.future.done() and key not in keys:
-                del self.entries[key]
-        missing = set(keys) - self.entries.keys()
+        if len(self.entries) + len(missing) > self.capacity:
+            for key, entry in list(self.entries.items()):
+                if entry.future.done() and key not in requested:
+                    del self.entries[key]
+                if len(self.entries) + len(missing) <= self.capacity:
+                    break
         if len(self.entries) + len(missing) > self.capacity:
             self.misses += len(batch.candidates)
             self.requests += 1
