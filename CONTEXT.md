@@ -1,4 +1,4 @@
-# denied.
+# noped.
 
 ## Product
 
@@ -66,7 +66,7 @@ Discovery is semantic-neutral: rendered text and media are eligible without ad-s
 
 Site adapters may resolve known layouts into one logical item's evidence and removal regions before generic grouping. They define ownership, not blocking policy. Preserve independent nested items, shared author identity, drafts and application controls; never promote a child decision to its whole collection. Local scope revisions include node membership and site/link identity without sending raw site IDs or URL paths. Revalidate before deletion. Whole-root items use the normal renderer; disjoint regions commit synchronously with guards against synchronous page mutations, without animation. Do not invoke provider delete/archive actions. Adapter names do not establish live-site support; record tested variants and access limitations in `docs/adapters.md`.
 
-Choose the smallest coherent offending block. Deduplicate nested candidates without collapsing an entire feed, article, or page into one removal target. Segment oversized text into bounded passages with enough surrounding context; do not silently truncate and treat the remainder as checked.
+Choose the smallest coherent offending block. Deduplicate nested candidates without collapsing an entire feed, article, or page into one removal target. Send one bounded snapshot per target, up to 24,000 characters and eight links. Mark oversized or overlinked targets partially unchecked; do not treat the omitted evidence as checked.
 
 For media metadata, additionally group compact containers with one player and one visible heading, or a linked thumbnail and heading sharing the same destination. Limit this structural association to at most two paragraphs and no nested collections; ambiguous layouts retain smaller targets. This is a generic first pass, not universal recognition of site-specific watch pages or custom players. Read media `title`, `aria-label`, and `aria-description` alongside rendered text, without reading pixels, audio, or embedded documents. Textless players remain partially unchecked. A keep judgment covers the supplied metadata, never the unseen video.
 
@@ -139,9 +139,9 @@ Do not add a cover-first loading state, replacement placeholder, or child-facing
 
 During the intact spin, non-scrolling `overflow:hidden`/`clip` ancestors temporarily allow visible overflow through owned animation effects. Shared ancestors remain open until every active target releases them; cancellation and the shard handoff restore the page's current styles without overwriting inline changes. This can reveal nearby overflow during the spin. Viewport overflow, scroll containers, and already-scrolled ancestors remain untouched to avoid page jumps. Paint containment, clip paths, and masks are not bypassed by this fix.
 
-Use a compact, roughly 300px-wide extension popup with an on/off control, page/total removal counts, ad/safety breakdown, service status, animation and toast controls, and rescan. Keep diagnostic controls separate from the ordinary browsing experience. Settings use accessible labels and keyboard controls; notices must not rely on color alone.
+Use a compact, roughly 300px-wide extension popup with page/total removal counts, a removal-effects switch, and rescan. Keep diagnostic settings behind the validated settings-message boundary, separate from the ordinary browsing experience. Settings use accessible labels and keyboard controls; notices must not rely on color alone.
 
-A toolbar badge shows the page's removal count. A brief bottom-right toast summarizes removals without repeating unsafe text. The interface uses the name `denied.`.
+A toolbar badge shows the page's removal count. A brief bottom-right toast summarizes removals without repeating unsafe text. The interface uses the name `noped.`.
 
 ## Privacy and deployment boundaries
 

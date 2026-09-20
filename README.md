@@ -34,9 +34,9 @@ Then:
 4. Protection and removal effects start enabled. Eligible page text is sent automatically through the configured API to Jev; new and edited content is checked without pressing Rescan. Existing installs receive a one-time upgrade enabling both settings; subsequent animation preferences are preserved.
 5. Reload already-open web pages after installing or rebuilding the extension.
 
-The popup includes page/total counts, separate ad/safety counts, animation and toast switches, rescan, and a highlight-only diagnostic mode. A block matching both filters counts as one removal. Highlighting does not count as removal.
+The popup shows page/total removal counts, a removal-effects switch, and rescan. A block matching both filters counts as one removal. API-origin, toast, and highlight-only diagnostic settings remain available through the extension's validated settings-message boundary, not popup controls. Highlighting does not count as removal.
 
-The API defaults to `http://127.0.0.1:8765`; change the origin under **Local API** if you use another local port. Provider credentials remain in the Python process. There is no frontend server to start.
+The API defaults to `http://127.0.0.1:8765`. Provider credentials remain in the Python process. There is no frontend server to start.
 
 ## Video listings: titles and descriptions only
 
@@ -86,7 +86,7 @@ Upgrading an existing removal table preserves `removed_at` as `date` and removes
 
 The additive entity-score migration leaves historical judgment rows `NULL` (not assessed), rather than fabricating a safe score. Existing signed pre-v9 removal receipts remain valid until expiry; their entity score is likewise unassessed.
 
-Judgment writes run after the inference response, using FastAPI's background tasks. `POST /outcomes` separately accepts short-lived signed receipts; callers cannot supply their own classifications or thresholds. Removal reports retry once and are idempotent. The shared backend token never enters the extension. Database failure does not prevent filtering: `/health` and the popup's API check report history errors, and failed removal delivery also appears in page status. **This is best-effort recording, not a durable outbox**; a failed write or process/tab/worker shutdown can lose records.
+Judgment writes run after the inference response, using FastAPI's background tasks. `POST /outcomes` separately accepts short-lived signed receipts; callers cannot supply their own classifications or thresholds. Removal reports retry once and are idempotent. The shared backend token never enters the extension. Database failure does not prevent filtering: `/health` reports history errors, and failed removal delivery also appears in page-status messages. **This is best-effort recording, not a durable outbox**; a failed write or process/tab/worker shutdown can lose records.
 
 Protected read endpoints:
 
@@ -105,8 +105,11 @@ Service tests require `TYPESAFE_API_KEY` in `src/backend/.env` and make real Jev
 ```sh
 # Repository root:
 bun run typecheck
+bun test src/extension/tests/*.test.ts
 bun run build
 bunx playwright install chromium
+# Real worker settings migration/restart checks, without provider calls:
+bun src/extension/tests/settings.browser.ts
 bun run test:api
 bun run test:extension
 # Video metadata association/playback checks plus actual extension/FastAPI/Jev filtering:
@@ -164,19 +167,24 @@ For the all-judgments/single-date change, typecheck/build, all seven real API te
 
 ## Architecture
 
+Application code and colocated tests live under `src/backend/` and `src/extension/`. The root holds build tooling and documentation; `dist/` and `artifacts/` are generated and ignored. The backend owns the shared labeled examples in `src/backend/tests/cases.json`.
+
 - `src/extension/adapters/catalog.ts`: one explicit catalog of site ownership rules, including disabled Pinterest.
 - `src/extension/adapters/index.ts` and `removal.ts`: shared ownership resolution, protected boundaries and guarded multi-region removal.
 - `src/extension/scan.ts` and `src/extension/grouping.ts`: adapter-first discovery, generic boundaries, media-card association, and text/metadata evidence extraction.
-- `src/extension/content.ts`: bounded queue, revisions, retries, and stale-result rejection.
+- `src/extension/dom.ts`: rendered-tree traversal through shadow roots and slots, shared by discovery and motion.
+- `src/extension/content.ts`: one bounded candidate per target, revisions, retries, and stale-result rejection.
 - `src/extension/effects.ts`: notices, diagnostic labels, and the removal entry point.
 - `src/extension/motion/`: guarded accelerating spin with wobble and glass glint, layout collapse, and bounded monochrome shard rendering.
-- `src/extension/background.ts`: fixed API bridge, trusted settings, and cumulative counters.
-- `src/extension/transport.ts`: bounded streaming transport; coalesces up to 30 batches without holding completed results.
+- `src/extension/background.ts`: fixed API bridge, trusted storage, and cumulative counters.
+- `src/extension/settings.ts`: defaults, settings/origin validation, and one-time upgrade policy.
+- `src/extension/transport.ts` and `ndjson.ts`: bounded streaming transport and shared UTF-8 line framing; coalesces up to 30 batches without holding completed results.
 - `src/extension/popup.ts`: the compact HTML/CSS settings interface.
 - `src/extension/contracts.ts`: shared types and boundary checks.
 - `src/backend/denied/app.py`: FastAPI lifecycle, loopback request checks, and deadlines.
 - `src/backend/denied/schemas.py`: bounded input and typed output.
 - `src/backend/denied/judge.py`: policy, 20-block Jev calls, and per-block removal decisions.
+- `src/backend/denied/reuse.py`: bounded document-scoped score reuse and in-flight request sharing.
 - `src/backend/denied/telemetry.py` and `src/backend/schema.sql`: signed removal receipts, optional Tiger storage, and protected history/metrics reads.
 
 Bun bundles TypeScript; Chrome runs the output. The backend uses FastAPI, HTTPX, Pydantic, and Psycopg. There is no React, Next.js, second backend, or account system.
