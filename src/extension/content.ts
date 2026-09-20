@@ -1,16 +1,16 @@
-import { DEFAULTS, OWN, judgmentsFrom, zeroCounts, type Batch, type Candidate, type Decision, type PageStats, type Removal, type Settings } from "./contracts";
+import { DEFAULTS, OWN, MAX_BATCH, judgmentsFrom, zeroCounts, type Batch, type Candidate, type Decision, type PageStats, type Removal, type Settings } from "./contracts";
 import { discover, evidence, owns, renderedParent, visibleItem, type Evidence } from "./scan";
 import { ownershipAttributes } from "./adapters";
 import { clearHighlights, highlight, notify, removeElement } from "./effects";
-import { INFERENCE_BATCH_SIZE, INFERENCE_DELAY_MS, inferenceDelay, requestBatches } from "./scheduling";
+import { requestBatches } from "./scheduling";
 
 type Target = {
-  id: string; revision: number; fingerprint: string; value: Evidence; parts: string[];
-  next: number; results: (Decision & { text: string })[]; attempts: number; retryAt: number;
+  id: string; revision: number; fingerprint: string; value: Evidence;
+  attempts: number; retryAt: number;
   detectedTick: number;
   state: "pending" | "checking" | "checked" | "animating" | "failed";
 };
-type Selected = { el: HTMLElement; target: Target; index: number; candidate: Candidate };
+type Selected = { el: HTMLElement; target: Target; candidate: Candidate };
 const documentId = Array.from(crypto.getRandomValues(new Uint32Array(4))).join("-");
 const records = new Map<HTMLElement, Target>();
 const roots = new Set<Element>();
@@ -26,7 +26,6 @@ let recordingError: string | null = null;
 let policyVersion = "";
 let overflow = 0;
 let skipped = new WeakSet<HTMLElement>();
-let lastInferenceStarted: number | null = null;
 const mutationOptions: MutationObserverInit = {
   subtree: true, childList: true, characterData: true, attributes: true,
   attributeFilter: ["href", "src", "srcset", "poster", "data", "type", "title", "alt", "aria-description", "itemprop",
@@ -35,11 +34,14 @@ const mutationOptions: MutationObserverInit = {
 };
 
 function stats(): PageStats {
-  const values = [...records.values()];
-  return { ...counts, checked: values.filter(t => t.state === "checked" && t.value.complete).length,
-    pending: values.filter(t => ["pending", "checking", "animating"].includes(t.state)).length,
-    deferred: overflow + values.filter(t => !t.value.complete || t.state === "failed").length,
+  const result = { ...counts, checked: 0, pending: 0, deferred: overflow,
     error: lastError, recording_error: recordingError };
+  for (const target of records.values()) {
+    if (target.state === "checked" && target.value.complete) result.checked++;
+    if (["pending", "checking", "animating"].includes(target.state)) result.pending++;
+    if (!target.value.complete || target.state === "failed") result.deferred++;
+  }
+  return result;
 }
 
 function schedule(delay = 600): void {
@@ -57,7 +59,6 @@ function reset(): void {
   clearHighlights();
   overflow = 0;
   skipped = new WeakSet();
-  lastInferenceStarted = null;
   lastError = null;
   recordingError = null;
   pageUrl = location.href;
@@ -72,8 +73,9 @@ function collect(): void {
     discover(root, shadow => observer.observe(shadow, mutationOptions)).forEach(el => found.add(el));
   }
   roots.clear();
-  const sorted = [...found].sort((a, b) => Math.abs(a.getBoundingClientRect().top) - Math.abs(b.getBoundingClientRect().top));
-  for (const el of sorted) {
+  const sorted = [...found].map(el => ({ el, distance: Math.abs(el.getBoundingClientRect().top) }))
+    .sort((a, b) => a.distance - b.distance);
+  for (const { el } of sorted) {
     // Only an item's owned regions supersede fragments. Replies can be physical
     // descendants without belonging to the parent post's classification/removal.
     let covered = false;
@@ -86,7 +88,7 @@ function collect(): void {
     for (const child of records.keys()) if (child !== el && owns(el, child)) records.delete(child);
     const previous = records.get(el);
     // Retain enough targets to fill a wave; recycle checked offscreen targets.
-    if (!previous && records.size >= INFERENCE_BATCH_SIZE * 2) {
+    if (!previous && records.size >= MAX_BATCH * 2) {
       const evict = [...records].find(([node, target]) => {
         const bounds = node.getBoundingClientRect();
         return target.state === "checked" && (bounds.bottom < 0 || bounds.top > innerHeight);
@@ -102,7 +104,7 @@ function collect(): void {
     const fingerprint = JSON.stringify(value);
     if (previous?.fingerprint === fingerprint) continue;
     records.set(el, { id: previous?.id || String(++sequence), revision: (previous?.revision || 0) + 1,
-      fingerprint, value, parts: [value.text], next: 0, results: [], attempts: 0, retryAt: 0, state: "pending",
+      fingerprint, value, attempts: 0, retryAt: 0, state: "pending",
       detectedTick: performance.now() });
   }
 }
@@ -115,13 +117,11 @@ function current(el: HTMLElement, target: Target, epoch: number, url: string): b
   return applicable(el, target, epoch, url) && JSON.stringify(evidence(el)) === target.fingerprint;
 }
 
-async function apply(el: HTMLElement, target: Target, epoch: number, url: string): Promise<void> {
-  const hits = target.results.filter(r => r.remove);
-  if (!hits.length) {
-    target.state = target.next === target.parts.length ? "checked" : "pending";
+async function apply(el: HTMLElement, target: Target, result: Decision, epoch: number, url: string): Promise<void> {
+  if (!result.remove) {
+    target.state = "checked";
     return;
   }
-  const result: Decision = { ...hits[0], reasons: [...new Set(hits.flatMap(r => r.reasons))] };
   if (settings.mode === "highlight") {
     highlight(el, result);
     target.state = "checked";
@@ -133,14 +133,13 @@ async function apply(el: HTMLElement, target: Target, epoch: number, url: string
     () => settings.mode === "remove" && applicable(el, target, epoch, url));
   if (removed) {
     // Only an actual, freshness-checked removal is eligible for persistent history.
-    const signed = hits.filter(hit => hit.receipt);
-    if (signed.length) {
+    if (result.receipt) {
       const removal: Removal = {
         document_id: documentId, target_id: target.id, revision: target.revision,
         removed_text: target.value.text, text_truncated: target.value.text_truncated,
         date: new Date().toISOString(),
         total_ms: Math.round(performance.now() - target.detectedTick),
-        passages: signed.map(hit => ({ receipt: hit.receipt!, text: hit.text })),
+        passages: [{ receipt: result.receipt, text: target.value.text }],
       };
       void chrome.runtime.sendMessage({ type: "removal", removal }).then(response => {
         if (response?.error && generation === epoch) recordingError = "History unavailable; filtering remains active";
@@ -177,14 +176,12 @@ async function checkBatch(items: Selected[], context: Omit<Batch, "candidates">,
         if (el.isConnected && settings.enabled) roots.add(el);
         continue;
       }
-      target.results.push({ ...results.get(candidate.id)!, text: candidate.text });
-      void apply(el, target, epoch, url);
+      void apply(el, target, results.get(candidate.id)!, epoch, url);
     }
   } catch (error) {
     if (generation !== epoch || location.href !== url || !settings.enabled) return;
-    for (const { el, target, index } of items) {
+    for (const { el, target } of items) {
       if (records.get(el) !== target) continue;
-      target.next = Math.min(target.next, index);
       target.attempts++;
       target.state = target.attempts < 3 ? "pending" : "failed";
       target.retryAt = Date.now() + 5000;
@@ -202,13 +199,11 @@ async function flush(): Promise<void> {
   const selected: Selected[] = [];
   for (const [el, target] of records) {
     if (target.state !== "pending" || target.retryAt > Date.now() || !visibleItem(el)) continue;
-    while (target.next < target.parts.length && selected.length < INFERENCE_BATCH_SIZE) {
-      const index = target.next++;
-      selected.push({ el, target, index, candidate: { id: `${target.id}:${index}`, revision: target.revision,
-        text: target.parts[index], links: target.value.links, ad: target.value.ad } });
-    }
-    if (selected.some(item => item.target === target)) target.state = "checking";
-    if (selected.length === INFERENCE_BATCH_SIZE) break;
+    // Each revision contains one bounded evidence block. Keep the wire ID stable.
+    selected.push({ el, target, candidate: { id: `${target.id}:0`, revision: target.revision,
+      text: target.value.text, links: target.value.links, ad: target.value.ad } });
+    target.state = "checking";
+    if (selected.length === MAX_BATCH) break;
   }
   if (!selected.length) {
     if ([...records.values()].some(t => t.state === "pending")) schedule(3000);
@@ -216,18 +211,10 @@ async function flush(): Promise<void> {
   }
   const context = { document_id: documentId, page_host: location.hostname,
     page_scheme: location.protocol.slice(0, -1) };
-  const wait = inferenceDelay(lastInferenceStarted, performance.now());
-  if (wait) {
-    for (const { target, index } of selected) target.next = Math.min(target.next, index);
-    for (const { target } of selected) { target.state = "pending"; target.retryAt = 0; }
-    schedule(wait);
-    return;
-  }
-  lastInferenceStarted = performance.now();
   activeWaves++;
   // Checking targets are excluded above. A new wave can start on time without
   // resending revisions whose requests are still outstanding.
-  schedule(INFERENCE_DELAY_MS);
+  schedule(0);
   try {
     // Await only for lifecycle bookkeeping, never to gate the next dispatch.
     await Promise.allSettled(requestBatches(selected).map(items => checkBatch(items, context, epoch, url)));
@@ -264,7 +251,7 @@ const observer = new MutationObserver(mutations => {
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (sender.id !== chrome.runtime.id) return;
   if (message?.type === "pageStats") respond({ ...stats(), ...(message.debug ? {
-    debug: { busy: activeWaves > 0, activeWaves, roots: roots.size, targets: [...records].filter(([, t]) => ["pending", "checking"].includes(t.state)).map(([el, t]) => ({ id: t.id, state: t.state, visible: visibleItem(el), next: t.next, parts: t.parts.length, results: t.results.length })) },
+    debug: { busy: activeWaves > 0, activeWaves, roots: roots.size, targets: [...records].filter(([, t]) => ["pending", "checking"].includes(t.state)).map(([el, t]) => ({ id: t.id, state: t.state, visible: visibleItem(el) })) },
   } : {}) });
   if (message?.type === "rescan") { reset(); respond({ ok: true }); }
   if (message?.type === "settingsChanged") { settings = message.settings; reset(); respond({ ok: true }); }
