@@ -78,6 +78,12 @@
     if (!button || buttonBusy) return;
     buttonBusy = true;
     button.setAttribute("aria-disabled", "true");
+    // Filtering removes hovered targets immediately. Move off this deliberate
+    // click target before previewing the same renderer's animated path.
+    if (button.matches(":scope:hover")) {
+      buttonStatus.textContent = "Move your pointer off the button to play the animation.";
+      await new Promise(resolve => button.addEventListener("pointerleave", resolve, { once: true }));
+    }
     buttonStatus.textContent = "Wind up. Spin faster. Break apart.";
     // Use the exact extension renderer; only the demonstration target changes.
     await removeElement(button, { animate: true }, () => button.isConnected);

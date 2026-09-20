@@ -21,6 +21,7 @@ try {
   for (const theme of ["light", "dark"]) {
     if (theme === "dark") await page.getByRole("button", { name: "Dark appearance", exact: true }).click();
     await button.click();
+    await page.mouse.move(0, 0);
     assert.match(await button.evaluate(el => getComputedStyle(el).filter), /drop-shadow\(/,
       "The spinning item should cast a drop shadow");
     assert.equal(await page.locator('[data-denied-ui="glint"]').count(), 1);
@@ -49,6 +50,7 @@ try {
     stage.style.cssText = `width:${box.width}px;height:${box.height}px;min-height:0;margin:60px auto;overflow:hidden`;
   });
   await button.click();
+  await page.mouse.move(0, 0);
   const clipping = await button.evaluate(target => {
     const stage = target.parentElement!;
     for (const animation of target.getAnimations()) {

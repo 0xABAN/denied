@@ -19,13 +19,17 @@ export function removeWithMotion(element: HTMLElement, settings: Settings, curre
   const box = element.getBoundingClientRect();
   const reduced = matchMedia("(prefers-reduced-motion: reduce)");
   const outside = box.bottom <= 0 || box.top >= innerHeight || box.right <= 0 || box.left >= innerWidth;
-  if (!settings.animate || document.hidden || reduced.matches || outside) {
+  // Disabling hit testing on an already-hovered item fires pointerleave, which
+  // can rewrite its evidence and restart removal. Commit before that happens.
+  // Qualify :hover with :scope so this also works on quirks-mode pages.
+  if (!settings.animate || document.hidden || reduced.matches || outside || element.matches(":scope:hover")) {
     element.remove();
     return Promise.resolve(true);
   }
   return new Promise(resolve => {
     const animations: Animation[] = [];
     let burst: Burst | undefined;
+    let burstStarted = false;
     let stopGlint: (() => void) | undefined;
     let restoreOverflow: (() => void) | undefined;
     let done = false;
@@ -41,6 +45,12 @@ export function removeWithMotion(element: HTMLElement, settings: Settings, curre
     const collapsible = !["inline", "contents", "table-cell", "table-row"].includes(style.display) &&
       !["absolute", "fixed"].includes(style.position);
 
+    // Native scroll events do not cross shadow boundaries.
+    const scrollRoots: EventTarget[] = [window];
+    for (let root = element.getRootNode(); root instanceof ShadowRoot; root = root.host.getRootNode()) {
+      scrollRoots.push(root);
+    }
+
     const finish = (remove: boolean) => {
       if (done) return;
       done = true;
@@ -48,6 +58,7 @@ export function removeWithMotion(element: HTMLElement, settings: Settings, curre
       stopGlint?.();
       observer.disconnect();
       document.removeEventListener("visibilitychange", hidden);
+      scrollRoots.forEach(root => root.removeEventListener("scroll", scrolled, true));
       reduced.removeEventListener("change", motionChanged);
       // Evaluate while the original evidence still exists. Only our own effects
       // are canceled; unrelated host animations and new styles are preserved.
@@ -55,7 +66,7 @@ export function removeWithMotion(element: HTMLElement, settings: Settings, curre
       animations.forEach(animation => animation.cancel());
       restoreOverflow?.();
       if (commit) element.remove();
-      else burst?.cancel();
+      if (!commit || !burstStarted) burst?.cancel();
       resolve(commit);
     };
     const hidden = () => {
@@ -64,9 +75,16 @@ export function removeWithMotion(element: HTMLElement, settings: Settings, curre
     const motionChanged = () => {
       if (reduced.matches) { burst?.cancel(); finish(true); }
     };
+    // Scroll changes geometry and often hover/classes too. Complete the guarded
+    // deletion in capture, before page scroll handlers can restart the effect.
+    const scrolled = (event: Event) => {
+      if (event.target !== document && event.target !== window) burst?.cancel();
+      finish(true);
+    };
     const observer = new MutationObserver(() => { if (!current()) finish(false); });
     observer.observe(element, { subtree: true, childList: true, characterData: true, attributes: true });
     document.addEventListener("visibilitychange", hidden);
+    scrollRoots.forEach(root => root.addEventListener("scroll", scrolled, { capture: true, passive: true }));
     reduced.addEventListener("change", motionChanged);
     fallback = setTimeout(() => { burst?.cancel(); finish(true); }, SPIN_MS + HOLD_MS + SETTLE_MS + 650);
 
@@ -127,6 +145,7 @@ export function removeWithMotion(element: HTMLElement, settings: Settings, curre
         animations.push(hide);
         restoreOverflow?.();
         burst?.play();
+        burstStarted = true;
         if (collapsible) {
           const settle = element.animate([from, to], { duration: SETTLE_MS, easing: EASE_OUT, fill: "forwards" });
           animations.push(settle);
@@ -134,6 +153,7 @@ export function removeWithMotion(element: HTMLElement, settings: Settings, curre
         }
         finish(true);
       } catch {
+        if (done) return;
         // A rendering failure must not prevent an otherwise valid removal.
         burst?.cancel();
         finish(true);

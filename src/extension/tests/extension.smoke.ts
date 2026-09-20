@@ -113,6 +113,39 @@ try {
   assert.equal((await stats()).total, 3);
   pass("real flagged content spins with a glass glint, explodes, counts once, and cleans up");
 
+  for (const interaction of ["hover", "scroll"]) {
+    await configure({ enabled: false });
+    await page.mouse.move(0, 0);
+    const before = (await stats()).total;
+    const id = `interaction${interaction}`;
+    await page.evaluate(({ id, text }) => {
+      document.body.style.minHeight = "2000px";
+      const target = document.createElement("article");
+      target.id = id;
+      target.className = "sample";
+      target.style.cssText = "position:fixed;left:40px;top:40px;width:360px;z-index:100";
+      target.textContent = text;
+      target.addEventListener("pointerenter", () => target.classList.add("hovered"));
+      target.addEventListener("pointerleave", () => target.classList.remove("hovered"));
+      if (id.endsWith("scroll")) window.addEventListener("scroll", () => target.classList.add("scrolled"), { once: true });
+      document.body.append(target);
+    }, { id, text: SCAM });
+    if (interaction === "hover") await page.locator(`#${id}`).hover();
+    await configure({ enabled: true });
+    if (interaction === "scroll") {
+      await page.waitForFunction(id => document.getElementById(id)?.getAnimations().some(a => a.effect?.getTiming().duration === 600), id);
+      await page.evaluate(() => window.scrollTo(0, 40));
+    }
+    await page.waitForSelector(`#${id}`, { state: "detached" });
+    await until(async () => (await stats()).total === before + 1, `${interaction} removal counted once`);
+    const judgments = forTarget(id);
+    assert.equal(judgments.length, 1, "Interaction must not restart inference/removal");
+    assert(judgments[0].result?.remove, "Removal must follow the genuine provider decision");
+    assert.equal(await page.locator("#safe-card").count(), 1);
+    await page.evaluate(() => { document.body.style.removeProperty("min-height"); window.scrollTo(0, 0); });
+    pass(`real flagged content completes removal during ${interaction}, without rejudging or double-counting`);
+  }
+
   if (!motionOnly) {
   await add("stale", SCAM);
   await until(() => forTarget("stale").length > 0, "real request dispatched");

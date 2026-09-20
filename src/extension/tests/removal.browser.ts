@@ -12,6 +12,7 @@ const errors: string[] = [];
 page.on("pageerror", error => errors.push(error.message));
 
 async function setup(count = 1) {
+  await page.mouse.move(0, 0);
   await page.setContent(`<style>
     body { margin: 60px; font: 16px/1.4 system-ui; }
     article { width: 480px; padding: 18px; margin: 0 0 12px; background: #eee; border-radius: 18px; }
@@ -26,8 +27,9 @@ async function setup(count = 1) {
       if (script.name.endsWith("scan.js")) (window as any).scan = module;
     }
     (window as any).results = [];
-    (window as any).start = (id: string, animate = true) => {
-      const element = document.getElementById(id)!;
+    (window as any).start = (target: string | HTMLElement, animate = true) => {
+      const element = typeof target === "string" ? document.getElementById(target)! : target;
+      const id = element.id;
       const fingerprint = JSON.stringify((window as any).scan.evidence(element));
       const started = performance.now();
       const current = () => element.isConnected &&
@@ -58,6 +60,64 @@ try {
   assert((await page.evaluate(() => (window as any).results[0])).removed,
     "Pointer movement must not cancel the disappearance");
   console.log("PASS: disappearing content cannot receive hover, including opted-in descendants");
+
+  await setup();
+  await page.locator("#target-0").evaluate(element => {
+    element.addEventListener("pointerenter", () => element.classList.add("hovered"));
+    element.addEventListener("pointerleave", () => element.classList.remove("hovered"));
+  });
+  await page.mouse.move(150, 90);
+  assert.equal(await page.locator("#target-0.hovered").count(), 1);
+  await page.evaluate(() => { void (window as any).start("target-0"); });
+  await page.mouse.move(151, 91);
+  await page.waitForFunction(() => (window as any).results.length === 1);
+  const hovered = await page.evaluate(() => (window as any).results[0]);
+  assert(hovered.removed && hovered.ms < 150,
+    "Already-hovered content must finish immediately, without triggering a pointerleave/animation loop");
+  assert.equal(await page.locator('[data-denied-ui="glint"]').count(), 0);
+  console.log("PASS: already-hovered content is removed without a hover/animation restart loop");
+
+  for (const scrollRoot of ["document", "nested", "shadow"]) {
+    await setup();
+    await page.evaluate(scrollRoot => {
+      const target = document.getElementById("target-0")!;
+      const spacer = document.createElement("div");
+      spacer.style.height = "2000px";
+      let scroller: HTMLElement | Window = window;
+      if (scrollRoot !== "document") {
+        const container = document.createElement("section");
+        container.style.cssText = "height:180px;overflow:auto";
+        target.before(container);
+        container.append(target, spacer);
+        if (scrollRoot === "shadow") {
+          const host = document.createElement("div");
+          container.before(host);
+          host.attachShadow({ mode: "open" }).append(container);
+        }
+        scroller = container;
+      } else document.body.append(spacer);
+      scroller.addEventListener("scroll", () => target.classList.add("scrolling"), { once: true });
+      void (window as any).start(target);
+      requestAnimationFrame(() => scroller.scrollTo(0, 40));
+    }, scrollRoot);
+    await page.waitForFunction(() => (window as any).results.length === 1);
+    const result = await page.evaluate(() => (window as any).results[0]);
+    assert(result.removed, `${scrollRoot} scrolling must commit rather than cancel removal`);
+    await page.waitForFunction(() => !document.querySelector('[data-denied-ui="glint"],canvas[data-denied-ui]'));
+    await page.evaluate(() => window.scrollTo(0, 0));
+  }
+  console.log("PASS: document, nested and shadow scrolling finish valid removals before scroll-state mutations");
+
+  await setup();
+  const changedOnScroll = await page.evaluate(async () => {
+    const target = document.getElementById("target-0")!;
+    const removal = (window as any).start(target.id);
+    target.querySelector("p")!.textContent = "Replacement content must survive scrolling.";
+    window.dispatchEvent(new Event("scroll"));
+    return removal;
+  });
+  assert(!changedOnScroll.removed, "Scroll must never bypass the changed-content guard");
+  assert.equal(await page.locator("#target-0").count(), 1);
 
   await setup(2);
   const overflowCleanup = await page.evaluate(async () => {
