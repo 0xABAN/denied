@@ -1,4 +1,4 @@
-import { type Settings } from "../contracts";
+import { type Settings } from "../settings";
 import { prepareBurst, type Burst } from "./burst";
 import { createGlint } from "./glint";
 import { releaseOverflowClips } from "./overflow";

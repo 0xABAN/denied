@@ -1,4 +1,5 @@
-import { apiBase, judgmentsFrom, type Batch, type Judgments } from "./contracts";
+import { judgmentsFrom, type Batch, type Judgments } from "./contracts";
+import { apiBase } from "./settings";
 
 type Pending = {
   batch: Batch;

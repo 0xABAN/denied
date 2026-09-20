@@ -1,10 +1,5 @@
 export const OWN = "data-denied-ui";
 export const MAX_BATCH = 600;
-export const DEFAULTS = {
-  enabled: true, animate: true, toast: true, mode: "remove" as "remove" | "highlight",
-  apiBase: "http://127.0.0.1:8765",
-};
-export type Settings = typeof DEFAULTS;
 export type Reason = "advertising" | "unsafe_content";
 export type Counts = { total: number; advertising: number; unsafe_content: number };
 export const zeroCounts = (): Counts => ({ total: 0, advertising: 0, unsafe_content: 0 });
@@ -27,24 +22,6 @@ export type Removal = {
 };
 export type Judgments = { document_id: string; policy_version: string; results: Decision[] };
 export type PageStats = Counts & { checked: number; pending: number; deferred: number; error: string | null; recording_error: string | null };
-
-export function apiBase(value: unknown): string {
-  if (typeof value !== "string") throw new Error("Invalid API URL");
-  const url = new URL(value);
-  const local = ["127.0.0.1", "localhost"].includes(url.hostname);
-  if ((url.protocol !== "https:" && !(local && url.protocol === "http:")) ||
-      url.username || url.password || url.search || url.hash || url.pathname !== "/") {
-    throw new Error("Use an HTTPS API origin or a loopback HTTP origin");
-  }
-  return url.origin;
-}
-
-export function settingsFrom(value: unknown): Settings {
-  const s = value as Settings;
-  if (!s || [s.enabled, s.animate, s.toast].some(v => typeof v !== "boolean") ||
-      !["remove", "highlight"].includes(s.mode)) throw new Error("Invalid settings");
-  return { enabled: s.enabled, animate: s.animate, toast: s.toast, mode: s.mode, apiBase: apiBase(s.apiBase) };
-}
 
 /** Validate the remote boundary without a second schema dependency. */
 export function judgmentsFrom(value: unknown, batch: Batch): Judgments {

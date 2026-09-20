@@ -1,4 +1,5 @@
-import { OWN, type Decision, type Settings } from "./contracts";
+import { OWN, type Decision } from "./contracts";
+import { type Settings } from "./settings";
 import { removeWithMotion } from "./motion/removal";
 import { ownership, type ItemScope } from "./adapters";
 import { scopeTree } from "./dom";

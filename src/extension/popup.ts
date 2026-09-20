@@ -1,4 +1,5 @@
-import { DEFAULTS, type Counts, type PageStats, type Settings } from "./contracts";
+import { type Counts, type PageStats } from "./contracts";
+import { DEFAULTS, type Settings } from "./settings";
 
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const show = (id: string, text: string) => { element(id).textContent = text; };

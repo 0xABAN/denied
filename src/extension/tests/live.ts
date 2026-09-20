@@ -1,6 +1,7 @@
 // Opt-in evaluation. Sends only the synthetic cases below through the running Python API.
 import assert from "node:assert/strict";
-import { apiBase, judgmentsFrom, type Batch } from "../contracts";
+import { judgmentsFrom, type Batch } from "../contracts";
+import { apiBase } from "../settings";
 
 const base = apiBase(process.env.DENIED_API_URL || "http://127.0.0.1:8765");
 const health = await fetch(`${base}/health`, { signal: AbortSignal.timeout(3000) }).then(r => r.json());

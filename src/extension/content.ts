@@ -1,4 +1,5 @@
-import { DEFAULTS, OWN, MAX_BATCH, judgmentsFrom, zeroCounts, type Batch, type Candidate, type Decision, type PageStats, type Removal, type Settings } from "./contracts";
+import { OWN, MAX_BATCH, judgmentsFrom, zeroCounts, type Batch, type Candidate, type Decision, type PageStats, type Removal } from "./contracts";
+import { DEFAULTS, type Settings } from "./settings";
 import { discover, evidence, owns, visibleItem, type Evidence } from "./scan";
 import { renderedParent } from "./dom";
 import { ownershipAttributes } from "./adapters";

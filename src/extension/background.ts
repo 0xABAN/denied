@@ -1,7 +1,7 @@
-import { DEFAULTS, MAX_BATCH, apiBase, settingsFrom, zeroCounts, type Batch, type Counts, type Removal, type Settings } from "./contracts";
+import { MAX_BATCH, zeroCounts, type Batch, type Counts, type Removal } from "./contracts";
+import { DEFAULTS, apiBase, settingsFrom, startupSettings, type Settings } from "./settings";
 import { BLOCKS_PER_REQUEST } from "./scheduling";
 import { enqueueJudgment } from "./transport";
-import { startupSettings } from "./settings";
 
 type Ledger = { total: Counts; documents: Record<string, Counts> };
 const ready = (async () => {
@@ -10,7 +10,7 @@ const ready = (async () => {
     ["settings", "automaticDefaultsApplied"]);
   if (!stored.automaticDefaultsApplied) {
     await chrome.storage.local.set({
-      settings: startupSettings(stored.settings, false), automaticDefaultsApplied: true,
+      settings: startupSettings(stored.settings), automaticDefaultsApplied: true,
     });
   }
 })();
